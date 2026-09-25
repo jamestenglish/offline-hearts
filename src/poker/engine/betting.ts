@@ -116,7 +116,9 @@ export function act(state: BettingState, action: BetAction): BettingState {
     }
   } else if (raisesBet && state.currentBet > 0) {
     for (const [i, other] of seats.entries()) {
-      if (i !== index && other.actedSinceFullRaise && other.streetBet < target) other.raiseLocked = true;
+      if (i !== index && other.actedSinceFullRaise && other.streetBet < target) {
+        other.raiseLocked = target - other.streetBet < state.lastFullRaise;
+      }
     }
   }
   const pending = raisesBet ? clockwise(state, index, seats.flatMap((other, i) =>

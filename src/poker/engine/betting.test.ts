@@ -93,6 +93,25 @@ describe('no-limit betting', () => {
     expect(roundComplete(move(called, { type: 'CALL' }))).toBe(true);
   });
 
+  it('cumulative short all-ins reopen a previously locked player once their last action is a full increment behind', () => {
+    const start = game([seat(100, 10), seat(5, 10), seat(10, 10), seat(100, 10)], [0, 1, 2, 3], 0, 10);
+    const checked = move(start, { type: 'CHECK' });
+    const firstShort = move(checked, { type: 'ALL_IN' });
+    expect(firstShort.seats[0].raiseLocked).toBe(true);
+    expect(firstShort.lastFullRaise).toBe(10);
+    const secondShort = move(firstShort, { type: 'ALL_IN' });
+    expect(secondShort.currentBet).toBe(20);
+    expect(secondShort.lastFullRaise).toBe(10);
+    expect(secondShort.pending).toEqual([3, 0]);
+    expect(secondShort.seats[0].raiseLocked).toBe(false);
+    const called = move(secondShort, { type: 'CALL' });
+    expect(called.current).toBe(0);
+    expect(legalActions(called)).toMatchObject({ call: 10, minTotal: 30, allIn: true });
+    const reopened = move(called, { type: 'BET_TO', total: 30 });
+    expect(reopened.lastFullRaise).toBe(10);
+    expect(reopened.pending).toEqual([3]);
+  });
+
   it('a full raise after a short all-in reopens the previously locked player', () => {
     const start = game([seat(100, 10), seat(5, 10), seat(100, 10)], [0, 1, 2], 0, 10);
     const checked = move(start, { type: 'CHECK' });

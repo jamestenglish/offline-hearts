@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gameReducer, type GameState, initialState } from '../engine/game';
 import { autoAction } from '../test/autoplay';
-import { GAME_KEY, loadVersioned, saveVersioned } from './storage';
+import { GAME_KEY, HISTORY_KEY, loadVersioned, ROSTER_KEY, saveVersioned } from './storage';
 import { loadGame } from './useGame';
 
 const players = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }, { id: 'd', name: 'D' }];
@@ -63,6 +63,18 @@ describe('loadGame', () => {
     localStorage.setItem(GAME_KEY, JSON.stringify({ version: 1, phase: 'playing', hands: [] }));
     expect(loadGame()).toEqual(initialState());
     expect(localStorage.getItem(GAME_KEY)).toBeNull();
+  });
+
+  it('does not erase roster or history when the game is corrupt', () => {
+    const roster = JSON.stringify({ version: 1, players: [{ id: 'a', name: 'Ann', archived: false, createdAt: 1 }] });
+    const history = JSON.stringify({ version: 1, games: [] });
+    localStorage.setItem(ROSTER_KEY, roster);
+    localStorage.setItem(HISTORY_KEY, history);
+    localStorage.setItem(GAME_KEY, '{bad');
+    expect(loadGame()).toEqual(initialState());
+    expect(localStorage.getItem(GAME_KEY)).toBeNull();
+    expect(localStorage.getItem(ROSTER_KEY)).toBe(roster);
+    expect(localStorage.getItem(HISTORY_KEY)).toBe(history);
   });
 
   it('rejects malformed nested cards, selections, and trick data', () => {

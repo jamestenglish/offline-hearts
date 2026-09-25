@@ -2,9 +2,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { resolve } from 'node:path';
 
 export default defineConfig({
   base: '/offline-hearts/',
+  build: {
+    rollupOptions: {
+      input: {
+        hearts: resolve(import.meta.dirname, 'index.html'),
+        poker: resolve(import.meta.dirname, 'offline-texas-holdem/index.html'),
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
@@ -26,9 +35,23 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+        navigateFallback: null,
       },
     }),
+    {
+      name: 'poker-own-manifest',
+      enforce: 'post',
+      transformIndexHtml: {
+        order: 'post',
+        handler(html, context) {
+          if (!context.path.includes('/offline-texas-holdem/')) return html;
+          return html
+            .replace(/<link rel="manifest" href="\/offline-hearts\/manifest\.webmanifest">/g, '')
+            .replace(/<script id="vite-plugin-pwa:register-sw"[^>]*><\/script>/g, '');
+        },
+      },
+    },
   ],
   test: {
     environment: 'jsdom',

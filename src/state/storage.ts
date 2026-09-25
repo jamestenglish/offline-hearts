@@ -67,3 +67,14 @@ export function saveVersioned(key: string, value: unknown): void {
     reportSave(key, true);
   }
 }
+
+export function removeVersioned(key: string): boolean {
+  try {
+    localStorage.removeItem(key);
+    reportSave(key, false);
+    return true;
+  } catch {
+    reportSave(key, true);
+    return false;
+  }
+}

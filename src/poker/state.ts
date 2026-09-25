@@ -1,6 +1,6 @@
 import { type Dispatch, useEffect, useReducer, useRef, useState } from 'react';
 import { cardId, type Card } from '../shared/cards';
-import { getSaveFailures, loadVersioned, saveVersioned } from '../shared/storage';
+import { getSaveFailures, loadVersioned, removeVersioned, saveVersioned } from '../shared/storage';
 import { tournamentReducer, type Action, type Tournament } from './engine/tournament';
 
 export const POKER_KEY = 'poker.tournament';
@@ -121,9 +121,9 @@ export function usePoker(): { state: Tournament | null; dispatch: Dispatch<Actio
   useEffect(() => {
     if (state === null) {
       if (mounted.current) {
-        try { localStorage.removeItem(POKER_KEY); } catch { /* Storage is unavailable. */ }
+        removeVersioned(POKER_KEY);
       }
-    } else saveVersioned(POKER_KEY, state);
+    } else saveVersioned(POKER_KEY, { ...state, holeRevealed: false });
     mounted.current = true;
   }, [state]);
   return { state, dispatch, resumable };

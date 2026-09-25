@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { legalActions } from './engine/betting';
 import { tournamentReducer, type Tournament } from './engine/tournament';
-import { getSaveFailures } from '../shared/storage';
+import { getSaveFailures, saveVersioned, subscribeToSaveFailures } from '../shared/storage';
 import { loadPoker, loadSettings, POKER_KEY, saveSettings, SETTINGS_KEY, usePoker } from './state';
 
 const players = [{ id: 'a', name: 'Alice' }, { id: 'b', name: 'Bob' }, { id: 'c', name: 'Carol' }];
@@ -121,13 +121,14 @@ describe('saved poker tournament', () => {
     for (const key of ['hearts.game', 'hearts.history', 'hearts.roster']) expect(localStorage.getItem(key)).toBe(`existing-${key}`);
   });
 
-  it('saves on every changed reducer state and resumes after unmount', async () => {
+  it('keeps revealed cards visible in memory but never stores the revealed flag', async () => {
     const { result, unmount } = renderHook(usePoker);
     expect(result.current.resumable).toBe(false);
     act(() => result.current.dispatch({ type: 'START', players, stack: 100, bigBlind: 10, id: 'poker-1', seed: 19 }));
     await waitFor(() => expect(loadPoker()?.phase).toBe('hand'));
     act(() => result.current.dispatch({ type: 'REVEAL' }));
-    await waitFor(() => expect(JSON.parse(localStorage.getItem(POKER_KEY)!).holeRevealed).toBe(true));
+    expect(result.current.state?.holeRevealed).toBe(true);
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(POKER_KEY)!).holeRevealed).toBe(false));
     unmount();
     const resumed = renderHook(usePoker);
     expect(resumed.result.current.resumable).toBe(true);
@@ -144,6 +145,27 @@ describe('saved poker tournament', () => {
     const reopened = renderHook(usePoker);
     expect(reopened.result.current.state).toBeNull();
     expect(reopened.result.current.resumable).toBe(false);
+  });
+
+  it('warns subscribers when abandoned tournament removal fails and the save survives', () => {
+    const { result } = renderHook(usePoker);
+    act(() => result.current.dispatch({ type: 'START', players, stack: 100, bigBlind: 10, id: 'poker-1', seed: 19 }));
+    expect(localStorage.getItem(POKER_KEY)).not.toBeNull();
+    const snapshots: string[] = [];
+    const unsubscribe = subscribeToSaveFailures(() => snapshots.push(getSaveFailures()));
+    const original = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+      if (key === POKER_KEY) throw new Error('denied');
+      return original.call(this, key);
+    });
+    act(() => result.current.dispatch({ type: 'ABANDON' }));
+    expect(result.current.state).toBeNull();
+    expect(localStorage.getItem(POKER_KEY)).not.toBeNull();
+    expect(snapshots).toContain(POKER_KEY);
+    expect(getSaveFailures()).toContain(POKER_KEY);
+    unsubscribe();
+    vi.restoreAllMocks();
+    saveVersioned(POKER_KEY, started());
   });
 });
 

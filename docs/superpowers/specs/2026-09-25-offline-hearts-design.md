@@ -91,7 +91,7 @@ Determine suits present in the hand. Choose an ordering of those suits that alte
 
 ### Actions
 
-`START_GAME(players, gameId, seed)`, `DEAL_DONE`, `REVEAL_HAND`, `FINALIZE_PASS(cardIds)`, `PLAY_CARD(cardId)`, `ACK_TRICK`, `NEXT_ROUND(seed)`, `PLAY_AGAIN(gameId, seed)`, `NEW_GAME`.
+`START_GAME(players, gameId, seed)`, `DEAL_DONE`, `REVEAL_HAND`, `FINALIZE_PASS(cardIds)`, `BEGIN_PLAY` (lead announcement → playing, revealed), `PLAY_CARD(cardId)`, `ACK_TRICK`, `NEXT_ROUND(seed)`, `PLAY_AGAIN(gameId, seed)`, `NEW_GAME`.
 
 To keep the reducer pure, shuffling uses a seeded PRNG (mulberry32); the UI dispatches `START_GAME`/`NEXT_ROUND`/`PLAY_AGAIN` with a random seed (and a new `gameId` from `crypto.randomUUID()` for new games); tests pass fixed values.
 
@@ -103,7 +103,7 @@ Pending selection (raised card / 3 pass cards) is component state, not persisted
 setup → dealing → passing (rounds 0–2) → leadAnnounce → playing ⇄ trickResult → roundSummary → dealing | gameOver
 ```
 
-Round 3 skips passing. Every player handoff sets `handRevealed=false`, so a reload never exposes a hand.
+Round 3 skips passing. Every player handoff sets `handRevealed=false`, and a loaded game is always forced to `handRevealed=false`, so a reload never exposes a hand.
 
 ## Screens
 
@@ -115,7 +115,7 @@ Round 3 skips passing. Every player handoff sets `handRevealed=false`, so a relo
 6. **TrickResult** — full trick shown; "Y wins the trick (+N). Pass the device to Y." Continue.
 7. **RoundSummary** — round points and running totals per player; moon celebration 🌙🚀 + banner if applicable. "Next Round (pass right)" etc.
 8. **GameOver** — final standings, winner(s); perfect-game celebration 🎉💯✨ if any player has 0; Play Again (same players) / New Players (back to Setup) / Stats.
-9. **Players** — list of roster players; add, rename (inline edit), archive/unarchive. Archived players shown in a collapsed section. Names must be non-empty and unique (case-insensitive, trimmed) among all roster players.
+9. **Players** — list of roster players; add, rename (inline edit), archive/unarchive. Archived players shown in a collapsed section. Names are trimmed, 1–20 characters, and unique (case-insensitive, trimmed) among all roster players.
 10. **Stats** — table with a row per player who has played at least one game: Games, Wins, Ties, Moons, Perfect. Uses current roster names. Below it, the game log newest-first (date, 4 players with totals, winner(s) marked); tapping an entry expands per-round scores with 🌙 on moon rounds. "Clear history" button with confirm dialog.
 
 ### Celebration

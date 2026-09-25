@@ -17,21 +17,36 @@ describe('shared Hearts APIs', () => {
     expect(new Set(shuffle(deck, mulberry32(1)).map(cardId))).toEqual(new Set(deck.map(cardId)));
   });
 
-  it('keeps the Hearts roster key and version-1 player shape readable by the original hook', () => {
+  it('writes a shared player under the Hearts roster key for the original hook', () => {
     expect(ROSTER_KEY).toBe('hearts.roster');
     const added = addPlayer([], 'Ann', 'id-ann', 1);
     expect(added).toMatchObject({ ok: true });
     if (!added.ok) throw new Error(added.error);
-    const existingHeartsRoster: Player[] = [
-      { id: 'id-bob', name: 'Bob', archived: false, createdAt: 2 },
-    ];
-    const players = [...existingHeartsRoster, ...added.players];
+    const players = added.players;
     saveVersioned(ROSTER_KEY, { version: 1, players });
     expect(loadVersioned<{ version: number; players: Player[] }>(ROSTER_KEY, 1)?.players).toEqual(players);
     expect(useRoster).toBe(heartsUseRoster);
     const { result } = renderHook(() => heartsUseRoster());
     expect(result.current.players).toEqual(players);
     expect(JSON.parse(localStorage.getItem('hearts.roster')!)).toEqual({ version: 1, players });
+  });
+
+  it('reads a pre-existing Hearts roster without replacing legacy IDs or names through either hook path', () => {
+    const legacyRoster = '{"version":1,"players":[{"id":"legacy-42","name":"Old Name","archived":false,"createdAt":1234}]}';
+    localStorage.setItem('hearts.roster', legacyRoster);
+
+    const original = renderHook(() => heartsUseRoster());
+    expect(original.result.current.players).toEqual([
+      { id: 'legacy-42', name: 'Old Name', archived: false, createdAt: 1234 },
+    ]);
+    original.unmount();
+
+    const shared = renderHook(() => useRoster());
+    expect(shared.result.current.players).toEqual([
+      { id: 'legacy-42', name: 'Old Name', archived: false, createdAt: 1234 },
+    ]);
+    expect(localStorage.getItem('hearts.roster')).toBe(legacyRoster);
+    shared.unmount();
   });
 
   it('renders the existing accessible card face', () => {

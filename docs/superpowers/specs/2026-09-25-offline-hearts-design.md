@@ -15,6 +15,8 @@ A pass-and-play Hearts game for 4 players on one device, installable to the iOS 
 | Persistence | Autosave full state to localStorage after every action; resume on reopen. |
 | Look | Classic green felt, CSS-rendered white cards (no image assets), portrait, iPhone-first. |
 | Architecture | Pure TS engine + `useReducer` + `vite-plugin-pwa`. |
+| Players | Managed roster with stable ids; add, rename, archive (no hard delete). |
+| History | Log of completed games; per-player stats derived from it. Tied-for-lowest counts as both a win and a tie. |
 
 ## Rules
 
@@ -26,6 +28,7 @@ A pass-and-play Hearts game for 4 players on one device, installable to the iOS 
 6. Shooting the moon: if one player takes all 26, that player scores 0 and each other player scores 26.
 7. Trick winner is the highest card of the led suit (A high). Winner leads next trick.
 8. Perfect game: a player whose total after 4 rounds is 0.
+9. Winners: all players tied for the lowest total. If more than one, the game is a tie; each tied player is credited with a win and a tie.
 
 ## Architecture
 
@@ -38,11 +41,17 @@ src/
     passing.ts       passDirection(round), passTarget(seat, round), applyPasses
     scoring.ts       roundPoints, shoot-the-moon adjust, perfect-game check
     game.ts          GameState, Action, reducer
+    roster.ts        Player type; addPlayer, renamePlayer, setArchived (pure)
+    history.ts       GameRecord type; buildRecord(finished GameState), appendRecord (idempotent)
+    stats.ts         computeStats(records, roster) → per-player rows
   state/
-    useGame.ts       useReducer + localStorage load/save (versioned)
-  components/        Card, Hand, TrickArea, Scoreboard, PrivacyScreen, Celebration
-  screens/           Setup, Deal, Pass, LeadAnnounce, Play, TrickResult, RoundSummary, GameOver
-  App.tsx            screen by state.phase
+    storage.ts       versioned localStorage load/save helpers (per key)
+    useGame.ts       useReducer + autosave of current game
+    useRoster.ts     roster state + persistence
+    useHistory.ts    history state + persistence
+  components/        Card, Hand, TrickArea, Scoreboard, PrivacyScreen, Celebration, ConfirmDialog
+  screens/           Setup, Deal, Pass, LeadAnnounce, Play, TrickResult, RoundSummary, GameOver, Players, Stats
+  App.tsx            screen by state.phase, plus a UI-only `view` overlay ('game'|'players'|'stats')
 ```
 
 ### Card model
@@ -58,7 +67,8 @@ Determine suits present in the hand. Choose an ordering of those suits that alte
 ```ts
 {
   version: 1,
-  players: string[4],          // seat 0..3 clockwise
+  gameId: string,              // unique per game; guards history append
+  players: {id, name}[4],      // seat 0..3 clockwise; name snapshot at game start
   round: 0..3,
   phase: 'setup'|'dealing'|'passing'|'leadAnnounce'|'playing'|'trickResult'|'roundSummary'|'gameOver',
   hands: Card[][4],
@@ -74,15 +84,16 @@ Determine suits present in the hand. Choose an ordering of those suits that alte
   taken: number[4],            // points taken this round
   roundScores: number[4][],    // per completed round, after moon adjustment
   totals: number[4],
-  moonShooter: number|null,    // for the latest round
+  moonShooter: number|null,    // seat that shot the moon in the latest scored round, else null
+  moonHistory: (number|null)[],// moonShooter for each completed round
 }
 ```
 
 ### Actions
 
-`START_GAME(names, seed?)`, `DEAL_DONE`, `REVEAL_HAND`, `FINALIZE_PASS(cardIds)`, `PLAY_CARD(cardId)`, `ACK_TRICK`, `NEXT_ROUND(seed?)`, `PLAY_AGAIN`, `NEW_GAME`.
+`START_GAME(players, gameId, seed)`, `DEAL_DONE`, `REVEAL_HAND`, `FINALIZE_PASS(cardIds)`, `PLAY_CARD(cardId)`, `ACK_TRICK`, `NEXT_ROUND(seed)`, `PLAY_AGAIN(gameId, seed)`, `NEW_GAME`.
 
-To keep the reducer pure, shuffling uses a seeded PRNG (mulberry32); the UI dispatches `START_GAME`/`NEXT_ROUND`/`PLAY_AGAIN` with a random seed, tests pass fixed seeds.
+To keep the reducer pure, shuffling uses a seeded PRNG (mulberry32); the UI dispatches `START_GAME`/`NEXT_ROUND`/`PLAY_AGAIN` with a random seed (and a new `gameId` from `crypto.randomUUID()` for new games); tests pass fixed values.
 
 Pending selection (raised card / 3 pass cards) is component state, not persisted. The reducer validates every action and returns the unchanged state for illegal ones.
 
@@ -96,18 +107,52 @@ Round 3 skips passing. Every player handoff sets `handRevealed=false`, so a relo
 
 ## Screens
 
-1. **Setup** — 4 name inputs (defaults Player 1–4), Start Game. If a saved in-progress game exists on launch, show a Resume / New Game choice first. A small "New Game" control is also available during play (with confirm).
+1. **Setup** — 4 seat dropdowns choosing from active (non-archived) roster players, each with an inline "+ New player" option; a player cannot occupy two seats. Start Game enabled when all 4 seats are filled. Links to Players and Stats. If a saved in-progress game exists on launch, show a Resume / New Game choice first. A small "New Game" control is also available during play (with confirm).
 2. **Deal** — ~1.5s animation of card backs flying from center to 4 seats (staggered CSS transforms), then `DEAL_DONE`.
 3. **Pass** — per player: privacy screen "Pass the device to X" + "Show X's hand". Header "Pass 3 cards left → Y". Tap toggles raise; max 3. "Finalize Selection" enabled at exactly 3. After finalize: hand hidden, "Pass the device to <next>". After all 4, passes applied simultaneously; received cards highlighted when each player next views.
 4. **LeadAnnounce** — "X has the 2♣ and leads. Pass the device to X."
 5. **Play** — table with 4 names around the edge and round points taken; center trick area shows each played card in front of its player's name. Privacy screen "See X's cards". Hand at bottom; unplayable cards dimmed (~40%) and not tappable. Tap raises card ~20px and shows "Play <card>" button; tapping another switches. On confirm: card placed in the center, hand hidden, "Pass the device to <next>".
 6. **TrickResult** — full trick shown; "Y wins the trick (+N). Pass the device to Y." Continue.
 7. **RoundSummary** — round points and running totals per player; moon celebration 🌙🚀 + banner if applicable. "Next Round (pass right)" etc.
-8. **GameOver** — final standings, winner(s); perfect-game celebration 🎉💯✨ if any player has 0; Play Again (same names) / New Players.
+8. **GameOver** — final standings, winner(s); perfect-game celebration 🎉💯✨ if any player has 0; Play Again (same players) / New Players (back to Setup) / Stats.
+9. **Players** — list of roster players; add, rename (inline edit), archive/unarchive. Archived players shown in a collapsed section. Names must be non-empty and unique (case-insensitive, trimmed) among all roster players.
+10. **Stats** — table with a row per player who has played at least one game: Games, Wins, Ties, Moons, Perfect. Uses current roster names. Below it, the game log newest-first (date, 4 players with totals, winner(s) marked); tapping an entry expands per-round scores with 🌙 on moon rounds. "Clear history" button with confirm dialog.
 
 ### Celebration
 
 ~40 emojis burst from the bottom with random x offset, rotation, scale and delay; float up and fade over ~2.5s. Pure CSS keyframes; `pointer-events: none`.
+
+## Players, History and Stats
+
+### Roster
+
+```ts
+Player { id: string, name: string, archived: boolean, createdAt: number }
+```
+
+Stored under localStorage key `hearts.roster` as `{ version: 1, players: Player[] }`. Renaming changes only `name`; history references ids, so stats follow the player. Archiving hides the player from Setup pickers only; stats and log are unaffected.
+
+### Game log
+
+```ts
+GameRecord {
+  gameId: string,
+  finishedAt: number,                 // epoch ms
+  seats: { playerId, name }[4],       // name as it was during the game
+  roundScores: number[4][],           // 4 rounds, moon-adjusted
+  totals: number[4],
+  winners: string[],                  // player ids tied for lowest
+  tie: boolean,                       // winners.length > 1
+  moonShooters: (string|null)[],      // per round, player id or null (from moonHistory)
+  perfect: string[],                  // player ids with total 0
+}
+```
+
+Stored under `hearts.history` as `{ version: 1, games: GameRecord[] }`. When the game reaches `gameOver`, `buildRecord` creates the record and `appendRecord` adds it only if no record with that `gameId` exists, so reloads on Game Over never double-record. Abandoned games are not recorded.
+
+### Stats
+
+`computeStats(records, roster)` returns, for each player id appearing in any record: `{ playerId, name, games, wins, ties, moons, perfect }`. `wins` includes tied wins; `moons` counts rounds shot (can exceed 1 per game). Name comes from the roster, falling back to the last recorded name. Sorted by wins desc, then games desc. Derived on render, never stored.
 
 ## PWA / iOS
 
@@ -124,11 +169,13 @@ Round 3 skips passing. Every player handoff sets `handRevealed=false`, so a relo
 
 ## Error handling
 
-- Saved state with missing/mismatched `version` or parse failure is discarded → Setup.
+- Saved state with missing/mismatched `version` or parse failure is discarded → Setup. Each storage key (`hearts.game`, `hearts.roster`, `hearts.history`) is validated independently; a corrupt current game never wipes roster or history.
+- A saved game whose player ids are no longer in the roster still resumes using its name snapshot.
 - Illegal actions are ignored by the reducer.
 
 ## Testing
 
 - Vitest unit tests for engine: deck (52 unique, 13 each), sort alternation, all `legalPlays` rules, trick winner, pass targets and application, scoring incl. moon and perfect detection.
 - Full-game simulation with seeded RNG through the reducer (always first legal card): each round sums to 26 (or moon-adjusted 78), game ends after round 4.
-- React Testing Library smoke test: setup → start → pass screen appears.
+- Unit tests for roster (add/rename/archive, name uniqueness), `buildRecord` (winners, tie flag, moons, perfect), `appendRecord` idempotency, and `computeStats` (tie counts as win + tie, multiple moons per game, rename follows id).
+- React Testing Library smoke test: add 4 players → setup → start → pass screen appears.

@@ -2,6 +2,29 @@ export const GAME_KEY = 'hearts.game';
 export const ROSTER_KEY = 'hearts.roster';
 export const HISTORY_KEY = 'hearts.history';
 
+const failedKeys = new Set<string>();
+const listeners = new Set<() => void>();
+let failureSnapshot = '';
+
+export function subscribeToSaveFailures(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function getSaveFailures(): string {
+  return failureSnapshot;
+}
+
+function reportSave(key: string, failed: boolean): void {
+  if (failed) failedKeys.add(key);
+  else failedKeys.delete(key);
+  const next = [...failedKeys].sort().join(', ');
+  if (next !== failureSnapshot) {
+    failureSnapshot = next;
+    listeners.forEach(listener => listener());
+  }
+}
+
 function discard(key: string): null {
   try {
     localStorage.removeItem(key);
@@ -32,7 +55,9 @@ export function loadVersioned<T extends { version: number }>(
 export function saveVersioned(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    reportSave(key, false);
   } catch {
-    // Storage full or unavailable: keep playing in memory.
+    // Keep playing in memory, but warn that this slice is not saved.
+    reportSave(key, true);
   }
 }

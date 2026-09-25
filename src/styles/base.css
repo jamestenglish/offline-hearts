@@ -147,6 +147,16 @@ select {
   font-size: 0.9rem;
 }
 
+.save-warning {
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #5a1f1f;
+  color: var(--ink);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 .privacy {
   display: flex;
   flex-direction: column;

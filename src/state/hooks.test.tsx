@@ -122,6 +122,17 @@ describe('useHistory', () => {
     expect(result.current.records).toEqual([]);
   });
 
+  it('does not resurrect the cleared Game Over record but accepts a different game', () => {
+    const { result } = renderHook(() => useHistory());
+    act(() => { result.current.append(rec); });
+    act(() => { result.current.clear('g1'); });
+    act(() => { result.current.append(rec); });
+    expect(result.current.records).toEqual([]);
+    act(() => { result.current.append({ ...rec, gameId: 'g2' }); });
+    expect(result.current.records.map(game => game.gameId)).toEqual(['g2']);
+    expect(JSON.parse(localStorage.getItem(HISTORY_KEY)!).games.map((game: GameRecord) => game.gameId)).toEqual(['g2']);
+  });
+
   it('loads saved history', () => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify({ version: 1, games: [rec] }));
     const { result } = renderHook(() => useHistory());

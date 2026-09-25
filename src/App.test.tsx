@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { gameReducer, type GameState, initialState } from './engine/game';
-import { GAME_KEY, HISTORY_KEY } from './state/storage';
+import { GAME_KEY, HISTORY_KEY, ROSTER_KEY } from './state/storage';
 import { autoAction } from './test/autoplay';
 
 const players = [
@@ -83,5 +83,67 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stats' }));
     expect(screen.getByRole('heading', { name: 'Stats' })).toBeInTheDocument();
     expect(screen.getAllByRole('row', { name: /Ann/ }).length).toBeGreaterThan(0);
+  });
+
+  it('keeps cleared game history empty after reloading Game Over but records a later game', () => {
+    saveGame(s => s.phase === 'gameOver');
+    const first = render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(screen.getByText('No games played yet.')).toBeInTheDocument();
+    first.unmount();
+
+    const second = render(<StrictMode><App /></StrictMode>);
+    fireEvent.click(screen.getByRole('button', { name: 'Stats' }));
+    expect(screen.getByText('No games played yet.')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(HISTORY_KEY)!).games).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: '← Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play Again' }));
+    second.unmount();
+
+    // Simulate that newly started game finishing, without replaying every turn in the UI.
+    saveGame(s => s.phase === 'gameOver');
+    const next = JSON.parse(localStorage.getItem(GAME_KEY)!);
+    localStorage.setItem(GAME_KEY, JSON.stringify({ ...next, gameId: 'later' }));
+    render(<App />);
+    expect(JSON.parse(localStorage.getItem(HISTORY_KEY)!).games.map((game: { gameId: string }) => game.gameId)).toEqual(['later']);
+  });
+
+  it.each([GAME_KEY, ROSTER_KEY, HISTORY_KEY])('warns when %s cannot be saved, allows play, and clears warning after recovery', key => {
+    if (key === HISTORY_KEY) saveGame(s => s.phase === 'gameOver');
+    const original = Storage.prototype.setItem;
+    let failing = true;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, name, value) {
+      if (name === key && failing) throw new DOMException('Full', 'QuotaExceededError');
+      return original.call(this, name, value);
+    });
+    try {
+      render(<App />);
+      expect(screen.getByRole('status')).toHaveTextContent(/not saved/i);
+      expect(screen.getByRole('button', { name: key === HISTORY_KEY ? 'Play Again' : 'Start Game' })).toBeInTheDocument();
+      failing = false;
+      if (key === GAME_KEY) {
+        ['Ann', 'Bob', 'Cat', 'Dan'].forEach((name, i) => {
+          fireEvent.change(screen.getByLabelText(`Seat ${i + 1}`), { target: { value: '__new__' } });
+          fireEvent.change(screen.getByLabelText('New player name'), { target: { value: name } });
+          fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Start Game' }));
+        expect(screen.getByText('Shuffling and dealing…')).toBeInTheDocument();
+      } else if (key === ROSTER_KEY) {
+        fireEvent.change(screen.getByLabelText('Seat 1'), { target: { value: '__new__' } });
+        fireEvent.change(screen.getByLabelText('New player name'), { target: { value: 'Ann' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      } else {
+        fireEvent.click(screen.getByRole('button', { name: 'Stats' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Clear history' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+        fireEvent.click(screen.getByRole('button', { name: '← Back' }));
+      }
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

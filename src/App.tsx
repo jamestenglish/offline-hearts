@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ROUNDS, type SeatPlayer } from './engine/game';
 import { buildRecord } from './engine/history';
@@ -16,10 +16,21 @@ import { TrickResultScreen } from './screens/TrickResultScreen';
 import { useGame } from './state/useGame';
 import { useHistory } from './state/useHistory';
 import { useRoster } from './state/useRoster';
+import { getSaveFailures, subscribeToSaveFailures } from './state/storage';
 
 type View = 'game' | 'players' | 'stats';
 
 export function App() {
+  const failed = useSyncExternalStore(subscribeToSaveFailures, getSaveFailures);
+  return (
+    <>
+      {failed && <p role="status" className="save-warning">Progress not saved ({failed}). Keep this page open; try another action when storage is available.</p>}
+      <GameApp />
+    </>
+  );
+}
+
+function GameApp() {
   const { state, dispatch, resumable } = useGame();
   const roster = useRoster();
   const history = useHistory();
@@ -54,7 +65,7 @@ export function App() {
       <StatsScreen
         records={history.records}
         roster={roster.players}
-        onClear={history.clear}
+        onClear={() => history.clear(state.phase === 'gameOver' ? state.gameId : undefined)}
         onBack={() => setView('game')}
       />
     );

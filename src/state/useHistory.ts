@@ -5,6 +5,7 @@ import { HISTORY_KEY, loadVersioned, saveVersioned } from './storage';
 interface HistoryFile {
   version: number;
   games: GameRecord[];
+  clearedGameId?: string | null;
 }
 
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -21,22 +22,29 @@ function validRecord(v: unknown): v is GameRecord {
     && strings(v.perfect);
 }
 
-function loadHistory(): GameRecord[] {
-  return loadVersioned<HistoryFile>(HISTORY_KEY, 1, f => Array.isArray(f.games) && f.games.every(validRecord))?.games ?? [];
+function loadHistory(): HistoryFile {
+  return loadVersioned<HistoryFile>(HISTORY_KEY, 1, f => Array.isArray(f.games) && f.games.every(validRecord)
+    && (f.clearedGameId === undefined || f.clearedGameId === null || typeof f.clearedGameId === 'string'))
+    ?? { version: 1, games: [], clearedGameId: null };
 }
 
 export function useHistory() {
-  const [records, setRecords] = useState<GameRecord[]>(loadHistory);
+  const [history, setHistory] = useState<HistoryFile>(loadHistory);
+  const records = history.games;
 
   useEffect(() => {
-    saveVersioned(HISTORY_KEY, { version: 1, games: records });
-  }, [records]);
+    saveVersioned(HISTORY_KEY, history);
+  }, [history]);
 
   const append = useCallback((record: GameRecord) => {
-    setRecords(prev => appendRecord(prev, record));
+    setHistory(prev => record.gameId === prev.clearedGameId ? prev : {
+      ...prev, games: appendRecord(prev.games, record),
+    });
   }, []);
 
-  const clear = useCallback(() => setRecords([]), []);
+  const clear = useCallback((gameId?: string) => setHistory(prev => ({
+    ...prev, games: [], clearedGameId: gameId ?? prev.clearedGameId ?? null,
+  })), []);
 
   return { records, append, clear };
 }

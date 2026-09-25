@@ -1,0 +1,77 @@
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  position: relative;
+  flex: none;
+  padding: 0;
+  color: var(--black);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.card.red {
+  color: var(--red);
+}
+
+.card:disabled {
+  cursor: default;
+}
+
+.card .corner {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  line-height: 1;
+  font-weight: 700;
+  font-size: calc(var(--card-w) * 0.28);
+  text-align: center;
+}
+
+.card .corner .suit {
+  display: block;
+  font-size: 0.9em;
+}
+
+.card .pip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--card-w) * 0.55);
+}
+
+.card.raised {
+  transform: translateY(-20px);
+}
+
+.card.dim {
+  opacity: 0.4;
+}
+
+.card.received {
+  box-shadow: 0 0 0 3px var(--accent), 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.card-back {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 8px;
+  background: repeating-linear-gradient(45deg, #8b1e2d 0 6px, #a8283a 6px 12px);
+  border: 3px solid #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.hand {
+  display: flex;
+  justify-content: center;
+  padding: 28px 8px 8px;
+  width: 100%;
+}
+
+.hand .card + .card {
+  margin-left: calc(var(--card-w) * -0.6);
+}

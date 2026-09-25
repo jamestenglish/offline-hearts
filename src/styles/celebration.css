@@ -1,0 +1,29 @@
+.celebration {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 40;
+}
+
+.celebration span {
+  position: absolute;
+  bottom: -10vh;
+  left: var(--x);
+  font-size: var(--size);
+  animation: emoji-rise var(--dur) ease-out var(--delay) both;
+}
+
+@keyframes emoji-rise {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(0.6);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-110vh) rotate(var(--rot)) scale(1.2);
+    opacity: 0;
+  }
+}

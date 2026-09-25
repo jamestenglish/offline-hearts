@@ -39,8 +39,14 @@ export function loadVersioned<T extends { version: number }>(
   version: number,
   isValid: (value: T) => boolean = () => true,
 ): T | null {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(key);
+    raw = localStorage.getItem(key);
+  } catch {
+    reportSave(key, true);
+    return null;
+  }
+  try {
     if (raw === null) return null;
     const value = JSON.parse(raw) as T;
     if (typeof value !== 'object' || value === null || value.version !== version || !isValid(value)) {

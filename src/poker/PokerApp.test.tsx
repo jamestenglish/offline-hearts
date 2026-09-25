@@ -5,7 +5,7 @@ import { cardLabel } from '../shared/cards';
 import { ROSTER_KEY, saveVersioned } from '../shared/storage';
 import { legalActions } from './engine/betting';
 import { tournamentReducer, type Tournament } from './engine/tournament';
-import { loadPoker, POKER_KEY } from './state';
+import { loadPoker, POKER_KEY, SETTINGS_KEY } from './state';
 import { PokerApp } from './PokerApp';
 
 const names = ['Alice', 'Bob', 'Carol', 'Dana', 'Eve', 'Frank', 'Grace', 'Hank'];
@@ -61,6 +61,31 @@ describe('PokerApp', () => {
     await user.click(screen.getByRole('button', { name: /Back/i }));
     expect(screen.getByRole('checkbox', { name: 'Alicia' })).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem(ROSTER_KEY)!).players[0].id).toBe(id);
+  });
+
+  it('removes hidden roster players from setup selection before starting', async () => {
+    roster(2);
+    const user = userEvent.setup();
+    render(<PokerApp />);
+    await user.click(screen.getByRole('checkbox', { name: 'Alice' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Bob' }));
+    expect(screen.getByRole('button', { name: /Start tournament/i })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /Manage players/i }));
+    const alice = screen.getByText('Alice').closest('li')!;
+    await user.click(within(alice).getByRole('button', { name: /Hide/i }));
+    await user.click(screen.getByRole('button', { name: /Back/i }));
+    expect(screen.queryByRole('checkbox', { name: 'Alice' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Bob' })).toBeChecked();
+    expect(screen.getByRole('button', { name: /Start tournament/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /Manage players/i }));
+    await user.click(screen.getByRole('button', { name: /Hidden players/i }));
+    await user.click(screen.getByRole('button', { name: /Unhide/i }));
+    await user.click(screen.getByRole('button', { name: /Back/i }));
+    expect(screen.getByRole('checkbox', { name: 'Alice' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /Start tournament/i })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Alice' }));
+    await user.click(screen.getByRole('button', { name: /Start tournament/i }));
+    expect(within(screen.getByRole('list', { name: /Seats/i })).getAllByRole('listitem')).toHaveLength(2);
   });
 
   it('hides hole card text before reveal, reveals only the acting hand, and confirms a street-total bet', async () => {
@@ -172,6 +197,29 @@ describe('PokerApp', () => {
     await user.click(screen.getByRole('button', { name: /^Resume$/i }));
     expect(screen.getByText(/Active blinds: 5 \/ 10/i)).toBeInTheDocument();
     expect(screen.getByText(/Next hand big blind: 20/i)).toBeInTheDocument();
+  });
+
+  it('keeps the effective blind and editor open when settings cannot be saved, including the next hand', async () => {
+    save(showdown());
+    const user = userEvent.setup();
+    render(<PokerApp />);
+    await user.click(screen.getByRole('button', { name: /^Resume$/i }));
+    await user.click(screen.getByRole('button', { name: /^Blinds$/i }));
+    await user.clear(screen.getByRole('spinbutton', { name: /Next hand big blind/i }));
+    await user.type(screen.getByRole('spinbutton', { name: /Next hand big blind/i }), '20');
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === SETTINGS_KEY) throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    await user.click(screen.getByRole('button', { name: /Save blinds/i }));
+    expect(screen.getByRole('status')).toHaveTextContent(SETTINGS_KEY);
+    expect(screen.getByText(/Next hand big blind: 10/i)).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: /Next hand big blind/i })).toHaveValue(20);
+    expect(screen.getByRole('alert')).toHaveTextContent(/not saved/i);
+    await user.click(screen.getByRole('button', { name: /Next hand/i }));
+    expect(screen.getByText(/Active blinds: 5 \/ 10/i)).toBeInTheDocument();
+    expect(screen.getByText(/Next hand big blind: 10/i)).toBeInTheDocument();
   });
 
   it('requires confirmation to abandon and warns when removing saved progress fails', async () => {

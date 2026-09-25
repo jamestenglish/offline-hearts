@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { PrivacyScreen } from '../components/PrivacyScreen';
 import { PlayersScreen } from '../screens/PlayersScreen';
@@ -92,12 +92,14 @@ function ActionPanel({ state, onAct }: { state: Tournament; onAct: (action: BetA
   </section>;
 }
 
-function BlindEditor({ value, onSave }: { value: number; onSave: (value: number) => void }) {
+function BlindEditor({ value, onSave }: { value: number; onSave: (value: number) => boolean }) {
   const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState(false);
   const number = Number(draft);
-  return <form className="poker-blinds field" onSubmit={(event: FormEvent) => { event.preventDefault(); if (draft.trim() && Number.isSafeInteger(number) && number > 0) onSave(number); }}>
+  return <form className="poker-blinds field" onSubmit={(event: FormEvent) => { event.preventDefault(); if (draft.trim() && Number.isSafeInteger(number) && number > 0) setError(!onSave(number)); }}>
     <label htmlFor="poker-blind-value">Next hand big blind</label>
-    <input id="poker-blind-value" type="number" inputMode="numeric" min="1" step="1" value={draft} onChange={e => setDraft(e.target.value)} />
+    <input id="poker-blind-value" type="number" inputMode="numeric" min="1" step="1" value={draft} onChange={e => { setDraft(e.target.value); setError(false); }} />
+    {error && <p role="alert" className="error">Blinds not saved. Retry when storage is available.</p>}
     <button className="btn small" disabled={!draft.trim() || !Number.isSafeInteger(number) || number < 1} type="submit">Save blinds</button>
   </form>;
 }
@@ -114,8 +116,13 @@ export function PokerApp() {
   const [askResume, setAskResume] = useState(resumable);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const active = activePlayers(roster.players);
+  useEffect(() => {
+    const ids = new Set(roster.players.filter(player => !player.archived).map(player => player.id));
+    setSelected(old => old.every(id => ids.has(id)) ? old : old.filter(id => ids.has(id)));
+  }, [roster.players]);
+  const eligible = selected.filter(id => active.some(player => player.id === id));
   const chips = Number(stack);
-  const validSetup = selected.length >= 2 && selected.length <= 8 && Number.isSafeInteger(chips) && chips >= settings && Number.isSafeInteger(chips * selected.length);
+  const validSetup = eligible.length >= 2 && eligible.length <= 8 && Number.isSafeInteger(chips) && chips >= settings && Number.isSafeInteger(chips * eligible.length);
 
   const content = view === 'players' ? <PlayersScreen roster={roster.players} onAdd={roster.add} onRename={roster.rename} onArchive={roster.archive} onBack={() => setView('table')} /> :
     askResume && state ? <div className="poker-gate"><h1>Texas Hold’em</h1><p>Tournament in progress. Pass the device privately before continuing.</p>
@@ -124,9 +131,14 @@ export function PokerApp() {
     !state ? <section className="poker-setup">
       <h1>Texas Hold’em</h1><p>Choose 2–8 players from the shared roster.</p>
       <button className="btn secondary" onClick={() => setView('players')}>Manage players</button>
-      <div className="poker-picks">{active.map(player => <label key={player.id}><input type="checkbox" checked={selected.includes(player.id)} disabled={!selected.includes(player.id) && selected.length === 8} onChange={e => setSelected(old => e.target.checked ? [...old, player.id] : old.filter(id => id !== player.id))} />{player.name}</label>)}</div>
+      <div className="poker-picks">{active.map(player => <label key={player.id}><input type="checkbox" checked={eligible.includes(player.id)} disabled={!eligible.includes(player.id) && eligible.length === 8} onChange={e => setSelected(e.target.checked ? [...eligible, player.id] : eligible.filter(id => id !== player.id))} />{player.name}</label>)}</div>
       <label className="field">Starting chips<input type="number" min={settings} step="1" inputMode="numeric" value={stack} onChange={e => setStack(e.target.value)} /></label>
-      <button className="btn" disabled={!validSetup} onClick={() => dispatch({ type: 'START', players: selected.map(id => active.find(player => player.id === id)!).map(({ id, name }) => ({ id, name })), stack: chips, bigBlind: settings, id: newId(), seed: randomSeed() })}>Start tournament</button>
+      <button className="btn" disabled={!validSetup} onClick={() => {
+        if (!validSetup) return;
+        const seats = eligible.map(id => active.find(player => player.id === id)).filter((player): player is (typeof active)[number] => player !== undefined);
+        if (seats.length !== eligible.length) return;
+        dispatch({ type: 'START', players: seats.map(({ id, name }) => ({ id, name })), stack: chips, bigBlind: settings, id: newId(), seed: randomSeed() });
+      }}>Start tournament</button>
     </section> : <>
       <div className="poker-toolbar"><button className="btn small secondary" onClick={() => setConfirmAbandon(true)}>New tournament</button></div>
       <Table state={state} />
@@ -142,7 +154,12 @@ export function PokerApp() {
     {failed && <p role="status" className="save-warning">Progress not saved ({failed}). Keep this page open; try another action when storage is available.</p>}
     <div className="poker-settings"><button className="btn small secondary" onClick={() => setEditingBlinds(value => !value)} aria-expanded={editingBlinds}>Blinds</button>
       <span>Next hand big blind: {settings}</span>
-      {editingBlinds && <BlindEditor value={settings} onSave={value => { saveSettings(value); setSettings(value); setEditingBlinds(false); }} />}
+      {editingBlinds && <BlindEditor value={settings} onSave={value => {
+        if (!saveSettings(value)) return false;
+        setSettings(value);
+        setEditingBlinds(false);
+        return true;
+      }} />}
     </div>
     {content}
     {confirmAbandon && <ConfirmDialog message="Abandon this tournament? This cannot be undone." confirmLabel="Abandon" onCancel={() => setConfirmAbandon(false)} onConfirm={() => { dispatch({ type: 'ABANDON' }); setAskResume(false); setConfirmAbandon(false); setSelected([]); }} />}

@@ -111,11 +111,21 @@ export function saveSettings(bigBlind: number): boolean {
 }
 
 function reducer(state: Tournament | null, action: Action): Tournament | null {
-  return tournamentReducer(state, action.type === 'NEXT_HAND' ? { ...action, bigBlind: loadSettings().bigBlind } : action);
+  return tournamentReducer(state, action);
 }
 
-export function usePoker(): { state: Tournament | null; dispatch: Dispatch<Action>; resumable: boolean } {
-  const [state, dispatch] = useReducer(reducer, undefined, loadPoker);
+export function usePoker(): { state: Tournament | null; dispatch: Dispatch<Action>; resumable: boolean; bigBlind: number; setBigBlind: (value: number) => boolean } {
+  const [state, baseDispatch] = useReducer(reducer, undefined, loadPoker);
+  const [bigBlind, setBigBlindValue] = useState(() => loadSettings().bigBlind);
+  const pendingBlind = useRef<number | null>(null);
+  const setBigBlind = (value: number): boolean => {
+    if (!positive(value)) return false;
+    pendingBlind.current = value;
+    setBigBlindValue(value);
+    return saveSettings(value);
+  };
+  const dispatch: Dispatch<Action> = action => baseDispatch(action.type === 'NEXT_HAND'
+    ? { ...action, bigBlind: pendingBlind.current ?? loadSettings().bigBlind } : action);
   const [resumable] = useState(() => state !== null && state.phase !== 'finished');
   const mounted = useRef(false);
   useEffect(() => {
@@ -126,5 +136,5 @@ export function usePoker(): { state: Tournament | null; dispatch: Dispatch<Actio
     } else saveVersioned(POKER_KEY, { ...state, holeRevealed: false });
     mounted.current = true;
   }, [state]);
-  return { state, dispatch, resumable };
+  return { state, dispatch, resumable, bigBlind, setBigBlind };
 }

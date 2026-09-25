@@ -9,7 +9,7 @@ import { getSaveFailures, subscribeToSaveFailures } from '../shared/storage';
 import { newId, randomSeed } from '../random';
 import { legalActions, type BetAction } from './engine/betting';
 import type { Tournament } from './engine/tournament';
-import { loadSettings, saveSettings, usePoker } from './state';
+import { usePoker } from './state';
 import './poker.css';
 
 function Cards({ cards }: { cards: NonNullable<Tournament['hand']>['board'] }) {
@@ -105,14 +105,15 @@ function BlindEditor({ value, onSave }: { value: number; onSave: (value: number)
 }
 
 export function PokerApp() {
-  const { state, dispatch, resumable } = usePoker();
+  const { state, dispatch, resumable, bigBlind: settings, setBigBlind } = usePoker();
   const roster = useRoster();
   const failed = useSyncExternalStore(subscribeToSaveFailures, getSaveFailures);
-  const [settings, setSettings] = useState(() => loadSettings().bigBlind);
   const [editingBlinds, setEditingBlinds] = useState(false);
   const [view, setView] = useState<'table' | 'players'>('table');
   const [selected, setSelected] = useState<string[]>([]);
   const [stack, setStack] = useState('1000');
+  const [newName, setNewName] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
   const [askResume, setAskResume] = useState(resumable);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const active = activePlayers(roster.players);
@@ -131,6 +132,18 @@ export function PokerApp() {
     !state ? <section className="poker-setup">
       <h1>Texas Hold’em</h1><p>Choose 2–8 players from the shared roster.</p>
       <button className="btn secondary" onClick={() => setView('players')}>Manage players</button>
+      <form className="field" onSubmit={event => {
+        event.preventDefault();
+        const result = roster.add(newName);
+        if (!result.ok) { setAddError(result.error); return; }
+        setNewName('');
+        setAddError(null);
+      }}>
+        <label htmlFor="poker-add-player">Add player name</label>
+        <div className="row"><input id="poker-add-player" value={newName} onChange={event => { setNewName(event.target.value); setAddError(null); }} />
+          <button className="btn small" type="submit">Add player</button></div>
+        {addError && <p className="error" role="alert">{addError}</p>}
+      </form>
       <div className="poker-picks">{active.map(player => <label key={player.id}><input type="checkbox" checked={eligible.includes(player.id)} disabled={!eligible.includes(player.id) && eligible.length === 8} onChange={e => setSelected(e.target.checked ? [...eligible, player.id] : eligible.filter(id => id !== player.id))} />{player.name}</label>)}</div>
       <label className="field">Starting chips<input type="number" min={settings} step="1" inputMode="numeric" value={stack} onChange={e => setStack(e.target.value)} /></label>
       <button className="btn" disabled={!validSetup} onClick={() => {
@@ -155,8 +168,7 @@ export function PokerApp() {
     <div className="poker-settings"><button className="btn small secondary" onClick={() => setEditingBlinds(value => !value)} aria-expanded={editingBlinds}>Blinds</button>
       <span>Next hand big blind: {settings}</span>
       {editingBlinds && <BlindEditor value={settings} onSave={value => {
-        if (!saveSettings(value)) return false;
-        setSettings(value);
+        if (!setBigBlind(value)) return false;
         setEditingBlinds(false);
         return true;
       }} />}

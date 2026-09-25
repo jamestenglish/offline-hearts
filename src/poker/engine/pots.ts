@@ -62,7 +62,7 @@ export function awardPots(seats: readonly BetSeat[], dealer: number, ranks: Read
 }
 
 function clearContributions(seats: BetSeat[]): BetSeat[] {
-  return seats.map(seat => ({ ...seat, committed: 0, streetBet: 0 }));
+  return seats.map(seat => ({ ...seat, committed: 0, streetBet: 0, allIn: seat.stack === 0 }));
 }
 
 export function awardUncontested(seats: readonly BetSeat[], winner: number): BetSeat[] {

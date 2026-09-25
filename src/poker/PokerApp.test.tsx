@@ -63,6 +63,28 @@ describe('PokerApp', () => {
     expect(JSON.parse(localStorage.getItem(ROSTER_KEY)!).players[0].id).toBe(id);
   });
 
+  it('adds a validated player inline at setup and seats them from the shared roster', async () => {
+    roster(1);
+    const user = userEvent.setup();
+    render(<PokerApp />);
+    await user.type(screen.getByRole('textbox', { name: /Add player name/i }), '  ');
+    await user.click(screen.getByRole('button', { name: /^Add player$/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/name/i);
+    await user.clear(screen.getByRole('textbox', { name: /Add player name/i }));
+    await user.type(screen.getByRole('textbox', { name: /Add player name/i }), 'Bob');
+    await user.click(screen.getByRole('button', { name: /^Add player$/i }));
+    expect(screen.getByRole('checkbox', { name: 'Bob' })).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /Add player name/i }), 'Bob');
+    await user.click(screen.getByRole('button', { name: /^Add player$/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/already|exists|duplicate/i);
+    expect(screen.getAllByRole('checkbox', { name: 'Bob' })).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem(ROSTER_KEY)!).players).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Bob' })]));
+    await user.click(screen.getByRole('checkbox', { name: 'Alice' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Bob' }));
+    await user.click(screen.getByRole('button', { name: /Start tournament/i }));
+    expect(within(screen.getByRole('list', { name: /Seats/i })).getByText(/^Bob(?: · Dealer)?$/)).toBeInTheDocument();
+  });
+
   it('removes hidden roster players from setup selection before starting', async () => {
     roster(2);
     const user = userEvent.setup();
@@ -199,7 +221,7 @@ describe('PokerApp', () => {
     expect(screen.getByText(/Next hand big blind: 20/i)).toBeInTheDocument();
   });
 
-  it('keeps the effective blind and editor open when settings cannot be saved, including the next hand', async () => {
+  it('applies a pending blind in memory when settings cannot be saved, including the next hand', async () => {
     save(showdown());
     const user = userEvent.setup();
     render(<PokerApp />);
@@ -214,12 +236,45 @@ describe('PokerApp', () => {
     });
     await user.click(screen.getByRole('button', { name: /Save blinds/i }));
     expect(screen.getByRole('status')).toHaveTextContent(SETTINGS_KEY);
-    expect(screen.getByText(/Next hand big blind: 10/i)).toBeInTheDocument();
+    expect(screen.getByText(/Next hand big blind: 20/i)).toBeInTheDocument();
     expect(screen.getByRole('spinbutton', { name: /Next hand big blind/i })).toHaveValue(20);
     expect(screen.getByRole('alert')).toHaveTextContent(/not saved/i);
     await user.click(screen.getByRole('button', { name: /Next hand/i }));
-    expect(screen.getByText(/Active blinds: 5 \/ 10/i)).toBeInTheDocument();
-    expect(screen.getByText(/Next hand big blind: 10/i)).toBeInTheDocument();
+    expect(screen.getByText(/Active blinds: 10 \/ 20/i)).toBeInTheDocument();
+    expect(screen.getByText(/Next hand big blind: 20/i)).toBeInTheDocument();
+  });
+
+  it('retries a failed blind edit when storage recovers and clears its warning', async () => {
+    save(start());
+    const user = userEvent.setup();
+    render(<PokerApp />);
+    await user.click(screen.getByRole('button', { name: /^Blinds$/i }));
+    await user.clear(screen.getByRole('spinbutton', { name: /Next hand big blind/i }));
+    await user.type(screen.getByRole('spinbutton', { name: /Next hand big blind/i }), '20');
+    const original = Storage.prototype.setItem;
+    const failure = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === SETTINGS_KEY) throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    await user.click(screen.getByRole('button', { name: /Save blinds/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/not saved/i);
+    failure.mockRestore();
+    await user.click(screen.getByRole('button', { name: /Save blinds/i }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).bigBlind).toBe(20);
+  });
+
+  it('shows a paid all-in showdown winner as no longer all-in after reload', async () => {
+    let state = start(2, 10, 19);
+    state = tournamentReducer(state, { type: 'REVEAL' })!;
+    state = tournamentReducer(state, { type: 'ACT', action: { type: 'CALL' } })!;
+    save(state);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const winner = state.stacks.findIndex(stack => stack > 0);
+    expect(winner).toBeGreaterThanOrEqual(0);
+    expect(within(screen.getByRole('list', { name: /Seats/i }).children[winner] as HTMLElement).queryByText('All in')).not.toBeInTheDocument();
   });
 
   it('requires confirmation to abandon and warns when removing saved progress fails', async () => {

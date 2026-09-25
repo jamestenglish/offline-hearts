@@ -109,6 +109,7 @@ describe('showdown payouts', () => {
     const result = awardPots(seats, 0, new Map([[0, high], [1, low], [2, low]]));
     expect(result.pots).toEqual([{ amount: 60, eligible: [0, 1, 2], winners: [0] }]);
     expect(result.seats.map(seat => seat.stack)).toEqual([60, 0, 0]);
+    expect(result.seats.map(seat => seat.allIn)).toEqual([false, true, true]);
   });
 
   it('refunds an unmatched bet before distributing the contested pot', () => {

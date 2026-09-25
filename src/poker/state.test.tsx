@@ -114,6 +114,20 @@ describe('saved poker tournament', () => {
     expect(loadPoker()).toEqual(state);
   });
 
+  it('reloads an all-in showdown winner with a positive stack and no all-in label', () => {
+    let state = tournamentReducer(null, { type: 'START', players: players.slice(0, 2), stack: 10,
+      bigBlind: 10, id: 'all-in', seed: 19 })!;
+    state = tournamentReducer(state, { type: 'REVEAL' })!;
+    state = tournamentReducer(state, { type: 'ACT', action: { type: 'CALL' } })!;
+    expect(state.phase).toBe('result');
+    expect(state.result?.kind).toBe('showdown');
+    const winner = state.stacks.findIndex(stack => stack > 0);
+    expect(winner).toBeGreaterThanOrEqual(0);
+    expect(state.hand!.betting.seats[winner].allIn).toBe(false);
+    saved(state);
+    expect(loadPoker()).toEqual(state);
+  });
+
   it('isolates corrupt poker data from all Hearts keys', () => {
     for (const key of ['hearts.game', 'hearts.history', 'hearts.roster']) localStorage.setItem(key, `existing-${key}`);
     localStorage.setItem(POKER_KEY, '{bad');
@@ -204,6 +218,51 @@ describe('poker settings', () => {
     expect(result.current.state?.phase).toBe('result');
     act(() => result.current.dispatch({ type: 'NEXT_HAND', seed: 42, bigBlind: 10 }));
     expect(result.current.state?.hand?.bigBlind).toBe(20);
+  });
+
+  it('uses pending in-memory blinds after a failed write and persists them on recovery', () => {
+    const { result } = renderHook(usePoker);
+    act(() => result.current.dispatch({ type: 'START', players, stack: 100, bigBlind: 10, id: 'poker-1', seed: 19 }));
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === SETTINGS_KEY) throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    act(() => result.current.setBigBlind(20));
+    expect(result.current.bigBlind).toBe(20);
+    expect(result.current.state?.hand?.bigBlind).toBe(10);
+    expect(loadSettings().bigBlind).toBe(10);
+    for (let i = 0; i < 50 && result.current.state?.phase === 'hand'; i++) {
+      act(() => result.current.dispatch({ type: 'REVEAL' }));
+      const action = legalActions(result.current.state!.hand!.betting).check ? 'CHECK' : 'CALL';
+      act(() => result.current.dispatch({ type: 'ACT', action: { type: action } }));
+    }
+    expect(result.current.state?.phase).toBe('result');
+    act(() => result.current.dispatch({ type: 'NEXT_HAND', seed: 42, bigBlind: 10 }));
+    expect(result.current.state?.hand?.bigBlind).toBe(20);
+    vi.restoreAllMocks();
+    expect(result.current.setBigBlind(20)).toBe(true);
+    expect(loadSettings().bigBlind).toBe(20);
+  });
+
+  it('drops an unwritten pending blind on reload while warning about unavailable settings', () => {
+    const { result, unmount } = renderHook(usePoker);
+    const originalSet = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === SETTINGS_KEY) throw new Error('quota');
+      return originalSet.call(this, key, value);
+    });
+    act(() => result.current.setBigBlind(20));
+    expect(result.current.bigBlind).toBe(20);
+    unmount();
+    const originalGet = Storage.prototype.getItem;
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+      if (key === SETTINGS_KEY) throw new Error('denied');
+      return originalGet.call(this, key);
+    });
+    const reloaded = renderHook(usePoker);
+    expect(reloaded.result.current.bigBlind).toBe(10);
+    expect(getSaveFailures()).toContain(SETTINGS_KEY);
   });
 
   it('reports poker and settings write failures through the shared warning store', async () => {

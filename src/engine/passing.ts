@@ -27,5 +27,5 @@ export function applyPasses(
     next[target].push(...passed);
     received[target].push(...passed.map(cardId));
   });
-  return { hands: next.map(sortHand), received };
+  return { hands: next.map(hand => sortHand(hand)), received };
 }

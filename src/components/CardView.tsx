@@ -32,6 +32,7 @@ export function CardView({ card, raised = false, dim = false, received = false, 
         <span className="suit">{SUIT_SYMBOL[card.suit]}</span>
       </span>
       <span className="pip">{SUIT_SYMBOL[card.suit]}</span>
+      {received && <span className="received-tag" aria-hidden="true">NEW</span>}
     </button>
   );
 }

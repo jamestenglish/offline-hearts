@@ -40,6 +40,20 @@ describe('loadGame', () => {
     expect(loadGame()).toEqual(initialState());
   });
 
+  it('restores a saved trick count and accepts older saves without that field', () => {
+    const s = gameReducer(initialState(), {
+      type: 'START_GAME',
+      players: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }, { id: 'd', name: 'D' }],
+      gameId: 'g', seed: 3,
+    });
+    saveVersioned(GAME_KEY, { ...s, tricksWon: [1, 0, 0, 0] });
+    expect(loadGame().tricksWon).toEqual([1, 0, 0, 0]);
+    const { tricksWon: _counts, ...older } = s;
+    void _counts;
+    saveVersioned(GAME_KEY, older);
+    expect(loadGame().tricksWon).toEqual([0, 0, 0, 0]);
+  });
+
   it('never restores a revealed hand from a valid passing state', () => {
     const passing = gameReducer(started(), { type: 'DEAL_DONE' });
     const revealed = gameReducer(passing, { type: 'REVEAL_HAND' });

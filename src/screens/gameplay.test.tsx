@@ -47,6 +47,17 @@ describe('DealScreen', () => {
 });
 
 describe('PassScreen', () => {
+  it('remembers a player’s ascending sort after the hand is hidden and shown again', () => {
+    const passing = gameReducer(start(), { type: 'DEAL_DONE' });
+    const revealed = gameReducer(passing, { type: 'REVEAL_HAND' });
+    const { unmount } = render(<PassScreen state={revealed} dispatch={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sort: Descending' }));
+    expect(screen.getByRole('button', { name: 'Sort: Ascending' })).toBeInTheDocument();
+    unmount();
+    render(<PassScreen state={revealed} dispatch={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Sort: Ascending' })).toBeInTheDocument();
+  });
+
   it('hides the hand until revealed, then allows exactly three cards', () => {
     const dispatch = vi.fn();
     const passing = gameReducer(start(), { type: 'DEAL_DONE' });
@@ -97,6 +108,22 @@ describe('LeadScreen', () => {
 });
 
 describe('PlayScreen', () => {
+  it('keeps the selected card while toggling sort and explains received cards', () => {
+    const dispatch = vi.fn();
+    const playing = advance(start(), s => s.phase === 'playing' && s.handRevealed);
+    const withReceived: GameState = {
+      ...playing,
+      received: playing.received.map((r, seat) => seat === playing.current ? ['2C', ...r] : r),
+    };
+    render(<PlayScreen state={withReceived} dispatch={dispatch} />);
+    expect(screen.getByText(/NEW = received in the pass/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '2♣' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sort: Descending' }));
+    expect(screen.getByRole('button', { name: '2♣' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Play 2♣' }));
+    expect(dispatch).toHaveBeenCalledWith({ type: 'PLAY_CARD', card: '2C' });
+  });
+
   it('shows the gate when hidden and reveals only on request', () => {
     const dispatch = vi.fn();
     const hidden: GameState = { ...advance(start(), s => s.phase === 'playing'), handRevealed: false };
@@ -146,6 +173,7 @@ describe('TrickResultScreen', () => {
     const winner = players[result.lastTrick!.winner].name;
     render(<TrickResultScreen state={result} dispatch={dispatch} />);
     expect(screen.getByText(new RegExp(`${winner} wins the trick`))).toBeInTheDocument();
+    expect(screen.queryByText(/\+\d+|\d+ pts/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: `Show ${winner}'s cards` }));
     expect(dispatch).toHaveBeenCalledWith({ type: 'ACK_TRICK' });
   });

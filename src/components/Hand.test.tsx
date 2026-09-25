@@ -27,5 +27,15 @@ describe('Hand', () => {
     expect(screen.getByRole('button', { name: 'Q♠' })).toHaveClass('raised');
     expect(screen.getByRole('button', { name: 'Q♠' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'K♦' })).toHaveClass('received');
+    expect(screen.getByRole('button', { name: 'K♦' })).toHaveTextContent('NEW');
+  });
+
+  it('reverses ranks inside suit groups without changing the chosen card or playable restrictions', () => {
+    const onToggle = vi.fn();
+    render(<Hand cards={cards} sortMode="ascending" selected={['QS']} playable={['QS']} onToggle={onToggle} />);
+    expect(screen.getAllByRole('button').map(b => b.getAttribute('aria-label')))
+      .toEqual(['Q♠', 'A♥', '2♣', 'K♦']);
+    expect(screen.getByRole('button', { name: 'Q♠' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'A♥' })).toBeDisabled();
   });
 });

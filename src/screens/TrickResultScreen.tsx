@@ -13,9 +13,9 @@ export function TrickResultScreen({ state, dispatch }: ScreenProps) {
   const roundOver = state.trickNumber >= TRICKS_PER_ROUND;
   return (
     <div className="screen">
-      <Table players={state.players} taken={state.taken} cards={last.cards} active={last.winner} winner={last.winner} />
+      <Table players={state.players} tricksWon={state.tricksWon} cards={last.cards} active={last.winner} winner={last.winner} />
       <p className="message">
-        {winner.name} wins the trick{last.points > 0 ? ` (+${last.points})` : ''}.
+        {winner.name} wins the trick.
       </p>
       {!roundOver && <p>Pass the device to {winner.name}.</p>}
       <button type="button" className="btn" onClick={() => dispatch({ type: 'ACK_TRICK' })}>

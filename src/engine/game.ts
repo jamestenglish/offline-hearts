@@ -46,6 +46,7 @@ export interface GameState {
   trickNumber: number;
   heartsBroken: boolean;
   taken: number[];
+  tricksWon: number[];
   roundScores: number[][];
   totals: number[];
   moonShooter: number | null;
@@ -82,6 +83,7 @@ export function initialState(): GameState {
     trickNumber: 0,
     heartsBroken: false,
     taken: [0, 0, 0, 0],
+    tricksWon: [0, 0, 0, 0],
     roundScores: [],
     totals: [0, 0, 0, 0],
     moonShooter: null,
@@ -90,7 +92,7 @@ export function initialState(): GameState {
 }
 
 function startRound(state: GameState, round: number, seed: number): GameState {
-  const hands = deal(seed).map(sortHand);
+  const hands = deal(seed).map(hand => sortHand(hand));
   const leader = findTwoOfClubs(hands);
   return {
     ...state,
@@ -107,6 +109,7 @@ function startRound(state: GameState, round: number, seed: number): GameState {
     trickNumber: 0,
     heartsBroken: false,
     taken: [0, 0, 0, 0],
+    tricksWon: [0, 0, 0, 0],
     moonShooter: null,
   };
 }
@@ -172,6 +175,7 @@ function playCard(state: GameState, id: CardId): GameState {
     hands,
     heartsBroken,
     taken: state.taken.map((t, i) => (i === winner ? t + points : t)),
+    tricksWon: state.tricksWon.map((count, i) => i === winner ? count + 1 : count),
     trick: { leader: winner, cards: [] },
     lastTrick: { winner, cards: trick.cards, points },
     trickNumber: state.trickNumber + 1,

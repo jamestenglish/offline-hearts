@@ -8,17 +8,19 @@ const players = [
 ];
 
 describe('Table', () => {
-  it('shows names, points taken and played cards', () => {
+  it('shows names, tricks won instead of points, and played cards', () => {
     render(
       <Table
         players={players}
-        taken={[0, 3, 13, 0]}
+        tricksWon={[0, 3, 10, 0]}
         cards={[{ seat: 2, card: parseCardId('QS') }]}
         active={3}
       />,
     );
     expect(within(screen.getByTestId('seat-2')).getByText('Cat')).toBeInTheDocument();
-    expect(within(screen.getByTestId('seat-2')).getByText('13 pts')).toBeInTheDocument();
+    expect(within(screen.getByTestId('seat-2')).getByText('10 tricks')).toBeInTheDocument();
+    expect(within(screen.getByTestId('seat-0')).getByText('0 tricks')).toBeInTheDocument();
+    expect(screen.queryByText(/pts/)).not.toBeInTheDocument();
     expect(screen.getByTestId('seat-3')).toHaveClass('active');
     expect(screen.getByRole('button', { name: 'Q♠' }).closest('.played')).toHaveClass('seat-2');
   });
@@ -27,7 +29,7 @@ describe('Table', () => {
     render(
       <Table
         players={players}
-        taken={[0, 0, 0, 0]}
+        tricksWon={[0, 1, 0, 0]}
         cards={[{ seat: 1, card: parseCardId('AH') }, { seat: 3, card: parseCardId('2H') }]}
         winner={1}
       />,
@@ -37,6 +39,7 @@ describe('Table', () => {
       expect(within(screen.getByTestId(`seat-${seat}`)).getByText(player.name)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'A♥' }).closest('.played')).toHaveClass('winner');
+    expect(within(screen.getByTestId('seat-1')).getByText('1 trick')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2♥' }).closest('.played')).not.toHaveClass('winner');
   });
 });

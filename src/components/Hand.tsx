@@ -1,5 +1,5 @@
 import { type Card, type CardId, cardId } from '../engine/cards';
-import { sortHand } from '../engine/sort';
+import { sortHand, type SortMode } from '../engine/sort';
 import { CardView } from './CardView';
 
 interface HandProps {
@@ -7,13 +7,14 @@ interface HandProps {
   selected: readonly CardId[];
   playable?: readonly CardId[];
   received?: readonly CardId[];
+  sortMode?: SortMode;
   onToggle: (id: CardId) => void;
 }
 
-export function Hand({ cards, selected, playable, received = [], onToggle }: HandProps) {
+export function Hand({ cards, selected, playable, received = [], sortMode = 'descending', onToggle }: HandProps) {
   return (
     <div className="hand">
-      {sortHand(cards).map(card => {
+      {sortHand(cards, sortMode).map(card => {
         const id = cardId(card);
         const canPlay = !playable || playable.includes(id);
         return (

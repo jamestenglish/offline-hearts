@@ -4,6 +4,7 @@ import type { Action, GameState } from '../engine/game';
 import { passDirection, passTarget } from '../engine/passing';
 import { Hand } from '../components/Hand';
 import { PrivacyScreen } from '../components/PrivacyScreen';
+import { useSortPreference } from '../state/sortPreferences';
 
 interface ScreenProps {
   state: GameState;
@@ -30,6 +31,7 @@ export function PassScreen({ state, dispatch }: ScreenProps) {
     <PassSelection
       key={state.passer}
       title={`${passer.name}: pass 3 cards ${passDirection(state.round)} → ${target.name}`}
+      playerId={passer.id}
       hand={state.hands[state.passer]}
       onFinalize={cards => dispatch({ type: 'FINALIZE_PASS', cards })}
     />
@@ -37,13 +39,15 @@ export function PassScreen({ state, dispatch }: ScreenProps) {
 }
 
 interface PassSelectionProps {
+  playerId: string;
   title: string;
   hand: readonly Card[];
   onFinalize: (cards: CardId[]) => void;
 }
 
-function PassSelection({ title, hand, onFinalize }: PassSelectionProps) {
+function PassSelection({ playerId, title, hand, onFinalize }: PassSelectionProps) {
   const [selected, setSelected] = useState<CardId[]>([]);
+  const [sortMode, toggleSort] = useSortPreference(playerId);
 
   const toggle = (id: CardId) =>
     setSelected(prev => {
@@ -55,7 +59,8 @@ function PassSelection({ title, hand, onFinalize }: PassSelectionProps) {
     <div className="screen">
       <h2 className="message">{title}</h2>
       <p>{selected.length}/3 selected</p>
-      <Hand cards={hand} selected={selected} onToggle={toggle} />
+      <button type="button" className="btn small secondary" onClick={toggleSort}>Sort: {sortMode === 'descending' ? 'Descending' : 'Ascending'}</button>
+      <Hand cards={hand} selected={selected} sortMode={sortMode} onToggle={toggle} />
       <button type="button" className="btn" disabled={selected.length !== 3} onClick={() => onFinalize(selected)}>
         Finalize Selection
       </button>

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type GameState, initialState } from '../engine/game';
 import type { GameRecord } from '../engine/history';
 import { GameOverScreen } from './GameOverScreen';
@@ -11,8 +11,11 @@ const players = [
 ];
 const base = (over: Partial<GameState>): GameState => ({ ...initialState(), players, gameId: 'g', ...over });
 
+afterEach(() => vi.useRealTimers());
+
 describe('RoundSummaryScreen', () => {
-  it('celebrates a moon shot and advances', () => {
+  it('reveals moon-adjusted scores in seat order, slams them in, then celebrates and enables advancing', () => {
+    vi.useFakeTimers();
     const dispatch = vi.fn();
     const state = base({
       phase: 'roundSummary', round: 0, roundScores: [[26, 0, 26, 26]], totals: [26, 0, 26, 26],
@@ -20,21 +23,49 @@ describe('RoundSummaryScreen', () => {
     });
     const { container } = render(<RoundSummaryScreen state={state} dispatch={dispatch} />);
     expect(screen.getByRole('heading', { name: 'Round 1 of 4' })).toBeInTheDocument();
+    expect(screen.queryByText('🌙 Bob shot the moon! 🚀')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next Round (pass right)' })).toBeDisabled();
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(within(rows[0]).getByText('0')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('—')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(850));
+    expect(within(rows[0]).getByText('26')).toHaveClass('score-slam');
+    expect(within(rows[1]).getByText('—')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(600));
+    expect(within(rows[1]).getByText('0')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('—')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(3600));
+    expect(screen.getByRole('row', { name: /Dan/ })).toHaveTextContent('26');
     expect(screen.getByText('🌙 Bob shot the moon! 🚀')).toBeInTheDocument();
     expect(container.querySelector('.celebration')).not.toBeNull();
-    expect(screen.getByRole('cell', { name: '0 🌙' })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Bob/ })).toHaveTextContent('0 🌙');
+    expect(screen.getByRole('row', { name: /Ann/ }).querySelector('td:last-child')).toHaveTextContent('26');
+    expect(screen.getByRole('button', { name: 'Next Round (pass right)' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Next Round (pass right)' }));
     expect(dispatch).toHaveBeenCalledWith({ type: 'NEXT_ROUND', seed: expect.any(Number) });
   });
 
+  it('immediately reveals all scores when reduced motion is preferred', () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    try {
+      const state = base({ phase: 'roundSummary', roundScores: [[1, 2, 3, 20]], totals: [1, 2, 3, 20] });
+      render(<RoundSummaryScreen state={state} dispatch={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'Next Round (pass right)' })).toBeEnabled();
+      expect(screen.queryByText('—')).not.toBeInTheDocument();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
   it.each([[1, 'pass across'], [2, 'no pass']] as const)('labels round %i next pass %s', (round, label) => {
-    render(<RoundSummaryScreen state={base({ phase: 'roundSummary', round })} dispatch={vi.fn()} />);
+    render(<RoundSummaryScreen state={base({ phase: 'roundSummary', round, roundScores: Array.from({ length: round + 1 }, () => [0, 0, 0, 0]) })} dispatch={vi.fn()} />);
     expect(screen.getByRole('button', { name: `Next Round (${label})` })).toBeInTheDocument();
   });
 
   it('labels the last round and shows no celebration without a moon', () => {
     const state = base({
-      phase: 'roundSummary', round: 3, roundScores: [[1, 2, 3, 20]], totals: [1, 2, 3, 20], moonHistory: [null],
+      phase: 'roundSummary', round: 3, roundScores: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [1, 2, 3, 20]], totals: [1, 2, 3, 20], moonHistory: [null],
     });
     const { container } = render(<RoundSummaryScreen state={state} dispatch={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Round 4 of 4' })).toBeInTheDocument();

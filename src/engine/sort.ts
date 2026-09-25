@@ -31,9 +31,12 @@ export function suitOrder(present: readonly Suit[]): Suit[] {
   return best;
 }
 
-export function sortHand(hand: readonly Card[]): Card[] {
+export type SortMode = 'descending' | 'ascending';
+
+export function sortHand(hand: readonly Card[], mode: SortMode = 'descending'): Card[] {
   const order = suitOrder([...new Set(hand.map(c => c.suit))]);
   return hand
     .slice()
-    .sort((a, b) => order.indexOf(a.suit) - order.indexOf(b.suit) || b.rank - a.rank);
+    .sort((a, b) => order.indexOf(a.suit) - order.indexOf(b.suit) ||
+      (mode === 'ascending' ? a.rank - b.rank : b.rank - a.rank));
 }

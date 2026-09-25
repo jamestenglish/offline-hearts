@@ -83,6 +83,8 @@ describe('gameReducer', () => {
     expect(s.current).toBe(s.lastTrick?.winner);
     expect(s.trick.cards).toHaveLength(0);
     expect(s.taken.reduce((a, b) => a + b, 0)).toBe(s.lastTrick?.points);
+    expect(s.tricksWon.reduce((a, b) => a + b, 0)).toBe(1);
+    expect(s.tricksWon[s.lastTrick!.winner]).toBe(1);
   });
 
   it('scores a moon shot', () => {
@@ -102,6 +104,7 @@ describe('gameReducer', () => {
     const r4 = run(s, { type: 'NEXT_ROUND', seed: 9 }, { type: 'DEAL_DONE' });
     expect(r4.round).toBe(3);
     expect(r4.phase).toBe('leadAnnounce');
+    expect(r4.tricksWon).toEqual([0, 0, 0, 0]);
   });
 
   it.each([1, 2, 3, 4, 5, 6, 7, 8])('plays a full game to the end (seed %i)', seed => {
@@ -116,6 +119,7 @@ describe('gameReducer', () => {
     }
     expect(s.roundScores).toHaveLength(4);
     expect(s.moonHistory).toHaveLength(4);
+    expect(s.tricksWon.reduce((a, b) => a + b, 0)).toBe(13);
     s.roundScores.forEach((round, i) => {
       const sum = round.reduce((a, b) => a + b, 0);
       expect(sum).toBe(s.moonHistory[i] === null ? 26 : 78);

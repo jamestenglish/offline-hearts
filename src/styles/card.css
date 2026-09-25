@@ -9,7 +9,7 @@
   flex: none;
   padding: 0;
   color: var(--black);
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, background-color 0.15s ease;
 }
 
 .card.red {
@@ -49,11 +49,28 @@
 }
 
 .card.dim {
-  opacity: 0.4;
+  background: #d1d7d4;
+  color: #45544f;
 }
 
-.card.received {
-  box-shadow: 0 0 0 3px var(--accent), 0 2px 4px rgba(0, 0, 0, 0.4);
+.card.dim.red {
+  color: #8d5861;
+}
+
+.card .received-tag {
+  position: absolute;
+  top: calc(var(--card-w) * 0.62);
+  left: 2px;
+  z-index: 1;
+  width: calc(var(--card-w) * 0.38);
+  padding: 2px 0;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #222;
+  font-size: clamp(7px, calc(var(--card-w) * 0.12), 10px);
+  font-weight: 800;
+  text-align: center;
+  line-height: 1;
 }
 
 .card-back {

@@ -34,3 +34,15 @@ describe('sortHand', () => {
     expect(input.map(cardId)).toEqual(['2C', 'AH']);
   });
 });
+
+describe('ascending suit-grouped order', () => {
+  it('keeps alternating suit groups and orders ranks low to high within each', () => {
+    expect(sortHand(hand(['2C', 'AH', 'AS', '10D', 'QS', '10H', '3C', '4D']), 'ascending').map(cardId))
+      .toEqual(['QS', 'AS', '10H', 'AH', '2C', '3C', '4D', '10D']);
+  });
+  it('does not mutate the hand', () => {
+    const input = hand(['2C', 'AH']);
+    sortHand(input, 'ascending');
+    expect(input.map(cardId)).toEqual(['2C', 'AH']);
+  });
+});

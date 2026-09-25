@@ -5,13 +5,13 @@ import { CardView } from './CardView';
 
 interface TableProps {
   players: readonly SeatPlayer[];
-  taken: readonly number[];
+  tricksWon: readonly number[];
   cards: readonly TrickCard[];
   active?: number;
   winner?: number;
 }
 
-export function Table({ players, taken, cards, active, winner }: TableProps) {
+export function Table({ players, tricksWon, cards, active, winner }: TableProps) {
   return (
     <div className="table">
       {players.map((player, seat) => (
@@ -21,7 +21,7 @@ export function Table({ players, taken, cards, active, winner }: TableProps) {
           className={`seat-label seat-${seat}${seat === active ? ' active' : ''}`}
         >
           <div className="name">{player.name}</div>
-          <div className="taken">{taken[seat]} pts</div>
+          <div className="taken">{tricksWon[seat]} {tricksWon[seat] === 1 ? 'trick' : 'tricks'}</div>
         </div>
       ))}
       {cards.map(({ seat, card }) => (

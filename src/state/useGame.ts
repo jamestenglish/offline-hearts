@@ -32,6 +32,7 @@ export function isValidGame(value: GameState): boolean {
     || !Number.isInteger(value.trickNumber) || value.trickNumber < 0 || value.trickNumber > 13
     || typeof value.heartsBroken !== 'boolean' || !four(value.taken, score)
     || !Array.isArray(value.roundScores) || !value.roundScores.every(s => four(s, score))
+    || (value.tricksWon !== undefined && !four(value.tricksWon, score))
     || !four(value.totals, score) || (value.moonShooter !== null && !seat(value.moonShooter))
     || !Array.isArray(value.moonHistory) || !value.moonHistory.every(s => s === null || seat(s))) {
     return false;
@@ -46,7 +47,7 @@ export function isValidGame(value: GameState): boolean {
 
 export function loadGame(): GameState {
   const saved = loadVersioned<GameState>(GAME_KEY, GAME_VERSION, isValidGame);
-  return saved ? { ...saved, handRevealed: false } : initialState();
+  return saved ? { ...saved, tricksWon: saved.tricksWon ?? [0, 0, 0, 0], handRevealed: false } : initialState();
 }
 
 export function useGame(): { state: GameState; dispatch: Dispatch<Action>; resumable: boolean } {

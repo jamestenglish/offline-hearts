@@ -11,7 +11,7 @@ export function LeadScreen({ state, dispatch }: ScreenProps) {
   const leader = state.players[state.current];
   return (
     <div className="screen">
-      <Table players={state.players} taken={state.taken} cards={[]} active={state.current} />
+      <Table players={state.players} tricksWon={state.tricksWon} cards={[]} active={state.current} />
       <p className="message">{leader.name} has the 2♣ and leads.</p>
       <p>Pass the device to {leader.name}.</p>
       <button type="button" className="btn" onClick={() => dispatch({ type: 'BEGIN_PLAY' })}>

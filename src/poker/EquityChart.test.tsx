@@ -23,8 +23,8 @@ it('charts completed streets with exact accessible table values and distinct pla
   expect(chart.querySelectorAll('polyline')).toHaveLength(2);
   expect(chart.querySelectorAll('circle')).toHaveLength(8);
   expect(chart.querySelector('polyline')).toHaveAttribute('points', '42,72.5 140,20 238,90 336,55');
-  expect(screen.getByText('● Ann')).toBeInTheDocument();
-  expect(screen.getByText('● Bo')).toBeInTheDocument();
+  expect(within(screen.getByRole('list', { name: /equity legend/i })).getByText('Ann')).toBeInTheDocument();
+  expect(within(screen.getByRole('list', { name: /equity legend/i })).getByText('Bo')).toBeInTheDocument();
   const table = screen.getByRole('table', { name: /equity/i });
   expect(within(table).getByRole('row', { name: /Ann.*62.5%.*100%.*50%.*75%/ })).toBeInTheDocument();
   expect(within(table).getByRole('row', { name: /Bo.*37.5%.*0%.*50%.*25%/ })).toBeInTheDocument();
@@ -42,4 +42,38 @@ it('does not connect unfinished streets and reports progress and worker errors i
   expect(screen.getAllByText('Calculating… 10 / 44')).toHaveLength(2);
   expect(screen.getAllByText('Worker failed')).toHaveLength(2);
   expect(screen.getByRole('table', { name: /equity/i })).toHaveTextContent('Preflop');
+});
+
+it('distinguishes all eight overlapping paths by line pattern and matching legend samples', () => {
+  const eight = Array.from({ length: 8 }, (_, seat) => ({ seat, name: `Player ${seat + 1}` }));
+  const points: Points = {
+    preflop: point('preflop', Array(8).fill(0.125), 8, 8),
+    flop: point('flop', Array(8).fill(0.125), 8, 8),
+    turn: null, river: null,
+  };
+  render(<EquityChart players={eight} points={points} />);
+  const chart = screen.getByRole('img', { name: /equity/i });
+  const paths = [...chart.querySelectorAll('polyline')];
+  expect(paths).toHaveLength(8);
+  expect(new Set(paths.map(path => path.getAttribute('points'))).size).toBe(1);
+  const patterns = paths.map(path => path.getAttribute('stroke-dasharray'));
+  expect(new Set(patterns).size).toBe(8);
+  expect(chart.querySelectorAll('circle')).toHaveLength(16);
+  const legend = screen.getByRole('list', { name: /equity legend/i });
+  for (const [index, pattern] of patterns.entries()) {
+    const item = within(legend).getAllByRole('listitem')[index];
+    expect(item).toHaveTextContent(`Player ${index + 1}`);
+    const sample = item.querySelector('svg line');
+    expect(sample?.getAttribute('stroke-dasharray')).toBe(pattern);
+  }
+});
+
+it('labels displayed percentages as rounded while retaining sub-percent equity', () => {
+  render(<EquityChart players={players} points={{
+    preflop: point('preflop', [1 / 3, 2 / 3], 3, 3), flop: null, turn: null, river: null,
+  }} />);
+  const table = screen.getByRole('table', { name: /rounded equity/i });
+  expect(table).toHaveTextContent('33.3333%');
+  expect(table).toHaveTextContent('66.6667%');
+  expect(screen.getByText(/percentages rounded to up to four decimal places/i)).toBeInTheDocument();
 });

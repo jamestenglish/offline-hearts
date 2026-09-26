@@ -9,6 +9,7 @@ import { useRoster } from '../shared/useRoster';
 import { getSaveFailures, subscribeToSaveFailures } from '../shared/storage';
 import { newId, randomSeed } from '../random';
 import { legalActions, type BetAction } from './engine/betting';
+import { compareHands } from './engine/evaluate';
 import { positions } from './engine/seats';
 import type { Tournament } from './engine/tournament';
 import { EquityChart } from './EquityChart';
@@ -17,6 +18,12 @@ import { useEquity } from './useEquity';
 import './poker.css';
 
 const createWorker = () => new Worker(new URL('./equity.worker.ts', import.meta.url), { type: 'module' });
+
+function snakeOrder(count: number): number[] {
+  const left = Math.ceil(count / 2);
+  return Array.from({ length: left }, (_, row) => [row, count - 1 - row])
+    .flat().filter((seat, position, seats) => seat >= 0 && seats.indexOf(seat) === position);
+}
 
 function Cards({ cards, highlighted }: { cards: NonNullable<Tournament['hand']>['board']; highlighted?: ReadonlySet<string> }) {
   return <div className="poker-cards">{cards.map(card => <span key={cardId(card)} className={highlighted?.has(cardId(card)) ? 'poker-best-card' : undefined}><CardView card={card} /></span>)}</div>;
@@ -30,15 +37,16 @@ function Table({ state }: { state: Tournament }) {
     {hand && <>
       <p>Active blinds: {hand.smallBlind} / {hand.bigBlind}</p>
       <p>Pot: {state.phase === 'result' ? state.result!.pots.reduce((sum, pot) => sum + pot.amount, 0) : hand.betting.seats.reduce((sum, seat) => sum + seat.committed, 0)}</p>
-      <div aria-label="Board"><Cards cards={hand.board} /></div>
     </>}
-    <ul className="poker-seats" aria-label="Seats">
-      {state.players.map((player, index) => <li key={player.id} className={state.current === index ? 'poker-current' : ''}>
-        <strong>{player.name}{state.dealer === index ? ' · Dealer' : ''}</strong>
+    {hand && <div aria-label="Board"><Cards cards={hand.board} /></div>}
+    <ul className="poker-seats poker-seats-snake" aria-label="Seats">
+      {snakeOrder(state.players.length).map(index => <li key={state.players[index].id} data-seat={index}
+        className={state.current === index ? 'poker-current' : ''}>
+        <strong>{state.players[index].name}{state.dealer === index ? ' · Dealer' : ''}</strong>
         {blinds?.small === index && <span className="poker-badge" title="Small blind">SB</span>}
         {blinds?.big === index && <span className="poker-badge" title="Big blind">BB</span>}
         <span>Stack: {state.stacks[index]}</span>
-        {hand && <span>Contributed: {hand.betting.seats[index].committed} · Current round bet: {hand.betting.seats[index].streetBet}</span>}
+        {hand && <span>Contributed: {hand.betting.seats[index].committed} · Current bet: {hand.betting.seats[index].streetBet}</span>}
         {hand?.betting.seats[index].folded && <span>Folded</span>}
         {hand?.betting.seats[index].allIn && !hand.betting.seats[index].folded && <span>All in</span>}
       </li>)}
@@ -48,6 +56,13 @@ function Table({ state }: { state: Tournament }) {
 
 function Results({ state, equity }: { state: Tournament; equity: ReturnType<typeof useEquity> }) {
   const result = state.result!;
+  const orderedHands = [...result.hands].sort((a, b) => compareHands(b.best, a.best) || a.seat - b.seat);
+  const orderedEquity = { ...equity };
+  for (const phase of ['preflop', 'flop', 'turn', 'river'] as const) {
+    const point = equity[phase];
+    if (point?.shares) orderedEquity[phase] = { ...point,
+      shares: orderedHands.map(hand => point.shares![result.hands.findIndex(entry => entry.seat === hand.seat)]) };
+  }
   const name = (seat: number) => state.players[seat].name;
   const payouts = new Map<number, number>();
   for (const pot of result.pots) {
@@ -59,7 +74,7 @@ function Results({ state, equity }: { state: Tournament; equity: ReturnType<type
   }
   return <section className="poker-results" aria-label="Hand result">
     <h2>{result.kind === 'uncontested' ? `${name(result.winnerSeats[0])} wins uncontested` : 'Showdown'}</h2>
-    {result.kind === 'showdown' && result.hands.map(entry => {
+    {result.kind === 'showdown' && orderedHands.map(entry => {
       const highlighted = new Set(entry.best.bestFive.map(cardId));
       return <section key={entry.seat} aria-label={`${name(entry.seat)} showdown`} className="poker-showdown-hand">
         <h3>{name(entry.seat)} · {entry.best.label}</h3>
@@ -74,7 +89,7 @@ function Results({ state, equity }: { state: Tournament; equity: ReturnType<type
       {pot.winners.length > 1 && ' (tie)'}
     </li>)}</ul>
     <ul>{[...payouts].map(([seat, amount]) => <li key={seat}>Payout: {name(seat)} +{amount}</li>)}</ul>
-    {state.phase === 'result' && result.kind === 'showdown' && result.hands.length >= 2 && <EquityChart players={result.hands.map(entry => ({ seat: entry.seat, name: name(entry.seat) }))} points={equity} />}
+    {state.phase === 'result' && result.kind === 'showdown' && result.hands.length >= 2 && <EquityChart players={orderedHands.map(entry => ({ seat: entry.seat, name: name(entry.seat) }))} points={orderedEquity} />}
   </section>;
 }
 
@@ -84,23 +99,24 @@ function ActionPanel({ state, onAct }: { state: Tournament; onAct: (action: BetA
   const legal = legalActions(state.hand!.betting);
   const total = Number(draft);
   const validTotal = draft.trim() !== '' && Number.isSafeInteger(total) && legal.minTotal !== null && total >= legal.minTotal && total <= legal.maxTotal;
-  const actionName = (action: BetAction) => action.type === 'BET_TO' ? `Bet to ${action.total} current round total` :
+  const actionName = (action: BetAction) => action.type === 'BET_TO' ? `Bet to ${action.total}` :
     action.type === 'ALL_IN' ? `All in for ${legal.maxTotal}` : action.type === 'CALL' ? `Call ${legal.call}` :
     action.type === 'CHECK' ? 'Check' : 'Fold';
   return <section className="poker-actions" aria-label="Betting actions">
     <h2>{state.players[state.current!].name}'s turn</h2>
     <div role="group" aria-label="Your hole cards"><Cards cards={state.hand!.hole[state.current!]!} /></div>
-    <p>To call: {legal.call ?? 0} · Current round bet: {state.hand!.betting.currentBet}</p>
+    <p>To call: {legal.call ?? 0} · Current bet: {state.hand!.betting.currentBet}</p>
     <div className="row">
       <button className="btn" disabled={!legal.check} onClick={() => setPending({ type: 'CHECK' })}>Check</button>
       <button className="btn" disabled={legal.call === null} onClick={() => setPending({ type: 'CALL' })}>Call {legal.call ?? ''}</button>
       <button className="btn secondary" disabled={!legal.fold} onClick={() => setPending({ type: 'FOLD' })}>Fold</button>
       <button className="btn" disabled={!legal.allIn} onClick={() => setPending({ type: 'ALL_IN' })}>All in</button>
     </div>
-    <label className="field">Bet to current round total
-      <input type="number" inputMode="numeric" min={legal.minTotal ?? undefined} max={legal.maxTotal} step="1" value={draft} onChange={e => setDraft(e.target.value)} aria-label="Bet to current round total" disabled={legal.minTotal === null} />
+    <label className="field">Bet to
+      <input type="number" inputMode="numeric" min={legal.minTotal ?? undefined} max={legal.maxTotal} step="1" value={draft} onChange={e => setDraft(e.target.value)} aria-label="Bet to" disabled={legal.minTotal === null} />
     </label>
-    <p>Minimum current round total: {legal.minTotal ?? 'Unavailable'} · Maximum: {legal.maxTotal}</p>
+    <p>Bet to means the total for this betting round, not extra chips.</p>
+    <p>Minimum bet to: {legal.minTotal ?? 'Unavailable'} · Maximum: {legal.maxTotal}</p>
     <button className="btn" disabled={!validTotal} onClick={() => setPending({ type: 'BET_TO', total })}>Bet to {draft || '…'}</button>
     {pending && <ConfirmDialog message={`Confirm ${actionName(pending)} for ${state.players[state.current!].name}?`} confirmLabel={`Confirm ${actionName(pending)}`} onCancel={() => setPending(null)} onConfirm={() => { onAct(pending); setPending(null); setDraft(''); }} />}
   </section>;

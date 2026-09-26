@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cardId, parseCardId, type Card } from '../../shared/cards';
-import { candidateCards, createEquity, runoutCount, type EquityInput } from './equity';
+import { candidateCards, createEquity, createSampledEquity, runoutCount, type EquityInput } from './equity';
 
 const cards = (ids: string[]) => ids.map(parseCardId);
 const players: EquityInput['players'] = [
@@ -9,6 +9,19 @@ const players: EquityInput['players'] = [
 ];
 
 describe('exact showdown equity', () => {
+  it('estimates preflop from a bounded reproducible sample', () => {
+    const work = createSampledEquity({ players, board: [] }, 20, 42);
+    expect(work.cursor.total).toBe(20);
+    const result = work.advance(20);
+    expect(result).toMatchObject({ processed: 20, total: 20, done: true });
+    expect(result.shares.reduce((sum, share) => sum + share, 0)).toBeCloseTo(20);
+    expect(createSampledEquity({ players, board: [] }, 20, 42).advance(20).shares).toEqual(result.shares);
+  });
+
+  it('estimates flop in a bounded sample but leaves turn exhaustive', () => {
+    expect(createSampledEquity({ players, board: cards(['2C', '3D', '4H']) }, 40, 9).advance(40).total).toBe(40);
+    expect(createEquity({ players, board: cards(['2C', '3D', '4H', '8S']) }).cursor.total).toBe(44);
+  });
   it('awards the sole river runout to the stronger hole hand', () => {
     const work = createEquity({ players, board: cards(['2C', '3D', '4H', '8S', 'KC']) });
     expect(work.cursor).toEqual({ indices: [], processed: 0, shares: [0, 0], total: 1, done: false });

@@ -1,10 +1,18 @@
-import { createEquity, type EquityCursor } from './engine/equity';
+import { createEquity, createSampledEquity, type EquityCursor } from './engine/equity';
 import type { EquityJob, EquityRequest, EquityResponse } from './equity.protocol';
 
 const BOARD_LENGTH = { preflop: 0, flop: 3, turn: 4, river: 5 } as const;
 const MAX_JOBS = 4;
 const PRIORITY = { river: 0, turn: 1, flop: 2, preflop: 3 } as const;
 const MAX_WAIT_BATCHES = 4;
+export const PREFLOP_SAMPLES = 2_000;
+export const FLOP_SAMPLES = 500;
+export const equityBudget = (phase: EquityJob['phase']) => phase === 'preflop' ? PREFLOP_SAMPLES : phase === 'flop' ? FLOP_SAMPLES : null;
+export function equitySeed(key: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) hash = Math.imul(hash ^ key.charCodeAt(i), 16777619);
+  return hash >>> 0;
+}
 type Work = { job: EquityJob; work?: ReturnType<typeof createEquity>; waited: number };
 
 export function createEquityQueue(
@@ -48,7 +56,9 @@ export function createEquityQueue(
       let cursor: EquityCursor;
       try {
         if (job.board.length !== BOARD_LENGTH[job.phase]) throw new RangeError('Invalid phase or board length');
-        current.work ??= createEquity({ players: job.players, board: job.board });
+        current.work ??= equityBudget(job.phase) === null
+          ? createEquity({ players: job.players, board: job.board })
+          : createSampledEquity({ players: job.players, board: job.board }, equityBudget(job.phase)!, equitySeed(job.key));
         cursor = current.work.advance(batchSize);
       } catch (error) {
         if (active !== current || disposed) return;

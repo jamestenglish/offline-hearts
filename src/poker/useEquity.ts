@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Card } from '../shared/cards';
 import { runoutCount, type EquityPlayer } from './engine/equity';
+import { equityBudget } from './equity.queue';
 import type { Tournament } from './engine/tournament';
 import { equityKey, type EquityJob, type EquityPhase, type EquityResponse } from './equity.protocol';
 
@@ -12,7 +13,8 @@ type Point = { key: string; processed: number; total: number; shares: number[] |
 type Points = Record<EquityPhase, Point | null>;
 const empty = (): Points => ({ preflop: null, flop: null, turn: null, river: null });
 const initial = (job: EquityJob): Point => ({ key: job.key, processed: 0,
-  total: runoutCount(52 - 2 * job.players.length - job.board.length, 5 - job.board.length), shares: null, error: null });
+  total: Math.min(equityBudget(job.phase) ?? Infinity,
+    runoutCount(52 - 2 * job.players.length - job.board.length, 5 - job.board.length)), shares: null, error: null });
 
 function desiredJobs(state: Tournament | null): EquityJob[] {
   if (!state?.hand || state.phase === 'finished' || state.result?.kind === 'uncontested') return [];

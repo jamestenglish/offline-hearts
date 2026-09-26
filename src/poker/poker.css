@@ -9,13 +9,14 @@
 .poker-toolbar { align-self: flex-end; }
 .poker-table { text-align: center; }
 .poker-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0; list-style: none; text-align: left; }
+.poker-seats-snake { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .poker-seats li { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; background: rgba(0,0,0,.25); padding: 12px; border-radius: 12px; }
 .poker-seats .poker-current { outline: 2px solid var(--accent); }
 .poker-badge { align-self: flex-start; border: 1px solid currentColor; border-radius: 8px; padding: 2px 8px; font-weight: 700; }
 .poker-cards { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px; }
 .poker-best-card { display: inline-flex; border: 3px solid #ffd43b; border-radius: 9px; }
 .poker-showdown-hand { padding: 12px 0; border-top: 1px solid rgba(255,255,255,.3); }
-.poker-equity { width: 100%; max-width: 100%; }
+.poker-equity { width: 100%; max-width: 680px; margin-inline: auto; }
 .poker-equity svg { width: 100%; max-width: 100%; height: auto; background: rgba(0,0,0,.2); border-radius: 8px; }
 .poker-equity svg text { font-size: 9px; fill: #fff; }
 .poker-equity-grid { stroke: rgba(255,255,255,.35); stroke-dasharray: 2 3; }
@@ -27,5 +28,4 @@
 .poker-equity th, .poker-equity td { border-bottom: 1px solid rgba(255,255,255,.3); padding: 6px; }
 .poker-results ul { line-height: 1.8; }
 .poker-app input { font-size: 16px; }
-@media (max-width: 600px) { .poker-seats { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .poker-app *, .poker-app *::before, .poker-app *::after { animation: none !important; transition: none !important; } }

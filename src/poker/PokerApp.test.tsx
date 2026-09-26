@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cardId, cardLabel } from '../shared/cards';
 import { ROSTER_KEY, saveVersioned } from '../shared/storage';
 import { legalActions } from './engine/betting';
+import { compareHands } from './engine/evaluate';
 import { tournamentReducer, type Tournament } from './engine/tournament';
 import type { EquityRequest, EquityResponse } from './equity.protocol';
 import { loadPoker, POKER_KEY, SETTINGS_KEY } from './state';
@@ -89,6 +90,54 @@ describe('PokerApp', () => {
     expect(screen.queryByRole('table', { name: /equity/i })).not.toBeInTheDocument();
   });
 
+  it('lists showdown hands strongest first, with tied hands in seat order', async () => {
+    const state = manyPlayerShowdown(3);
+    saveVersioned(POKER_KEY, state);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const expected = [...state.result!.hands].sort((a, b) => compareHands(b.best, a.best) || a.seat - b.seat)
+      .map(entry => `${state.players[entry.seat].name} showdown`);
+    expect(screen.getAllByRole('region', { name: /showdown$/ }).map(section => section.getAttribute('aria-label')))
+      .toEqual(expected);
+    const graphRows = within(screen.getByRole('table', { name: /equity/i })).getAllByRole('row').slice(1);
+    expect(graphRows.map(row => within(row).getByRole('rowheader').textContent))
+      .toEqual(expected.map(label => label.replace(' showdown', '')));
+  });
+
+  it('lays out seats in two columns that snake around the edge in turn order', async () => {
+    const state = start(8);
+    saveVersioned(POKER_KEY, state);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const seats = screen.getByRole('list', { name: 'Seats' });
+    expect(seats).toHaveClass('poker-seats-snake');
+    // Read down the left side, then up the right side: 1/8, 2/7, 3/6, 4/5.
+    expect([...seats.children].map(seat => seat.getAttribute('data-seat')))
+      .toEqual(['0', '7', '1', '6', '2', '5', '3', '4']);
+    expect([...seats.children].map(seat => seat.textContent?.match(/(?:Alice|Bob|Carol|Dana|Eve|Frank|Grace|Hank)/)?.[0]))
+      .toEqual(['Alice', 'Hank', 'Bob', 'Grace', 'Carol', 'Frank', 'Dana', 'Eve']);
+  });
+
+  it('shows the playable seat list in portrait instead of demanding rotation', async () => {
+    saveVersioned(POKER_KEY, start());
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    expect(screen.queryByText(/rotate your phone/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Seats' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Your hole cards' })).not.toBeInTheDocument();
+  });
+
+  it.each([2, 3, 5])('snakes %i seats without changing engine order', async count => {
+    const state = start(count);
+    saveVersioned(POKER_KEY, state);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const seats = screen.getByRole('list', { name: 'Seats' });
+    const order = [...seats.children].map(seat => Number(seat.getAttribute('data-seat')));
+    expect(order).toEqual(count === 2 ? [0, 1] : count === 3 ? [0, 2, 1] : [0, 4, 1, 3, 2]);
+    expect(state.players.map(player => player.id)).toEqual(players.slice(0, count).map(player => player.id));
+  });
+
   it.each([0, 1])('highlights %i hole cards when the evaluator selects board-heavy best five', async holeCount => {
     let state: Tournament | undefined;
     let seat = -1;
@@ -115,8 +164,8 @@ describe('PokerApp', () => {
     const live = state.hand!.hole.flatMap((hole, seat) => hole ? [seat] : []);
     const small = count === 2 ? state.dealer : live[(live.indexOf(state.dealer) + 1) % live.length];
     const big = live[(live.indexOf(small) + 1) % live.length];
-    expect(within(seats.children[small] as HTMLElement).getByText('SB')).toBeInTheDocument();
-    expect(within(seats.children[big] as HTMLElement).getByText('BB')).toBeInTheDocument();
+    expect(within(seats.querySelector(`[data-seat="${small}"]`) as HTMLElement).getByText('SB')).toBeInTheDocument();
+    expect(within(seats.querySelector(`[data-seat="${big}"]`) as HTMLElement).getByText('BB')).toBeInTheDocument();
     expect(seats.querySelectorAll('.poker-badge')).toHaveLength(2);
   });
 
@@ -139,7 +188,7 @@ describe('PokerApp', () => {
     saveVersioned(POKER_KEY, state!);
     render(<PokerApp />);
     await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
-    const seat = screen.getByRole('list', { name: 'Seats' }).children[absent] as HTMLElement;
+    const seat = screen.getByRole('list', { name: 'Seats' }).querySelector(`[data-seat="${absent}"]`) as HTMLElement;
     expect(within(seat).queryByText(/^(SB|BB)$/)).not.toBeInTheDocument();
   });
 
@@ -159,16 +208,17 @@ describe('PokerApp', () => {
     render(<PokerApp />);
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Resume$/i }));
-    expect(screen.getByRole('list', { name: 'Seats' })).toHaveTextContent('Current round bet:');
+    expect(screen.getByRole('list', { name: 'Seats' })).toHaveTextContent('Current bet:');
     expect(document.querySelector('.poker-best-card')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Reveal/i }));
-    expect(screen.getByRole('region', { name: 'Betting actions' })).toHaveTextContent('Current round bet:');
-    const input = screen.getByRole('spinbutton', { name: 'Bet to current round total' });
+    expect(screen.getByRole('region', { name: 'Betting actions' })).toHaveTextContent('Current bet:');
+    const input = screen.getByRole('spinbutton', { name: 'Bet to' });
     expect(input).toBeInTheDocument();
+    expect(screen.getByText(/total for this betting round, not extra chips/i)).toBeInTheDocument();
     await user.type(input, String(legalActions(start().hand!.betting).minTotal));
     await user.click(screen.getByRole('button', { name: /Bet to/i }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('current round total');
-    expect(screen.queryByText(/Street:|street bet|street total/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('Bet to');
+    expect(screen.queryByText(/Street:|street bet|street total|current round bet/i)).not.toBeInTheDocument();
   });
   it('validates seats and starts an eight-player table with visible chips and an accessible scroll list', async () => {
     roster();
@@ -263,7 +313,7 @@ describe('PokerApp', () => {
     for (const label of own) expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     for (const label of other) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
     const legal = legalActions(state.hand!.betting);
-    await user.type(screen.getByRole('spinbutton', { name: /current round total/i }), String(legal.minTotal));
+    await user.type(screen.getByRole('spinbutton', { name: 'Bet to' }), String(legal.minTotal));
     await user.click(screen.getByRole('button', { name: /Bet to/i }));
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent(String(legal.minTotal));

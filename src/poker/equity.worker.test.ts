@@ -36,6 +36,25 @@ describe('cancellable equity queue', () => {
     expect(sent).toEqual([{ type: 'result', key: 'river-1', processed: 1, total: 1, shares: [1, 0] }]);
   });
 
+  it('limits estimated preflop and flop jobs to their sample budget, but keeps turn exact', () => {
+    const { callbacks, sent, queue } = harness(256);
+    queue.receive({ type: 'start', job: preflop });
+    callbacks.shift()!();
+    expect(sent[0]).toMatchObject({ type: 'progress', key: 'preflop-1', processed: 256, total: 2000 });
+    queue.receive({ type: 'cancelAll' });
+    while (callbacks.length) callbacks.shift()!();
+
+    queue.receive({ type: 'start', job: { ...turn, phase: 'flop', board: turn.board.slice(0, 3), key: 'flop-1' } });
+    callbacks.shift()!();
+    expect(sent.at(-1)).toMatchObject({ type: 'progress', key: 'flop-1', total: 500 });
+    queue.receive({ type: 'cancelAll' });
+    while (callbacks.length) callbacks.shift()!();
+
+    queue.receive({ type: 'start', job: turn });
+    callbacks.shift()!();
+    expect(sent.at(-1)).toMatchObject({ type: 'result', key: 'turn-1', processed: 44, total: 44 });
+  });
+
   it('yields after a turn batch and cancels before the next one', () => {
     const { callbacks, sent, queue, drain } = harness();
     queue.receive({ type: 'start', job: turn });
@@ -51,7 +70,7 @@ describe('cancellable equity queue', () => {
     const { callbacks, sent, queue } = harness(1);
     queue.receive({ type: 'start', job: preflop });
     callbacks.shift()!();
-    expect(sent.at(-1)).toMatchObject({ type: 'progress', key: 'preflop-1', processed: 1, total: 1712304 });
+    expect(sent.at(-1)).toMatchObject({ type: 'progress', key: 'preflop-1', processed: 1, total: 2000 });
     queue.receive({ type: 'start', job: river });
     callbacks.shift()!();
     expect(sent.at(-1)).toEqual({ type: 'result', key: 'river-1', processed: 1, total: 1, shares: [1, 0] });

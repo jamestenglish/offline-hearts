@@ -1,4 +1,4 @@
-import { cardId, newDeck, type Card } from '../../shared/cards';
+import { cardId, mulberry32, newDeck, type Card } from '../../shared/cards';
 import { bestOfSeven, compareHands } from './evaluate';
 
 export interface EquityPlayer {
@@ -94,6 +94,57 @@ export function createEquity(input: EquityInput): { cursor: EquityCursor; advanc
           }
         }
       }
+    }
+    return snapshot();
+  }
+
+  return { get cursor() { return snapshot(); }, advance };
+}
+
+export function createSampledEquity(input: EquityInput, samples: number, seed: number):
+  { cursor: EquityCursor; advance(maxRunouts: number): EquityCursor } {
+  const candidates = candidateCards(input);
+  if (!Number.isSafeInteger(samples) || samples < 1 || !Number.isSafeInteger(seed)) {
+    throw new RangeError('Invalid sample count or seed');
+  }
+  const missing = 5 - input.board.length;
+  const total = Math.min(samples, runoutCount(candidates.length, missing));
+  if (total === runoutCount(candidates.length, missing)) return createEquity(input);
+  const rng = mulberry32(seed);
+  const knownBoard = input.board.slice();
+  const holes = input.players.map(player => player.hole.slice());
+  const shares = input.players.map(() => 0);
+  const seen = new Set<string>();
+  let processed = 0;
+  const snapshot = (): EquityCursor => ({ indices: [], processed, shares: shares.slice(), total, done: processed === total });
+
+  function advance(maxRunouts: number): EquityCursor {
+    if (!Number.isSafeInteger(maxRunouts) || maxRunouts < 0) throw new RangeError('maxRunouts must be a nonnegative integer');
+    const stop = Math.min(total, processed + maxRunouts);
+    while (processed < stop) {
+      let indices: number[];
+      let key: string;
+      do {
+        const pool = Array.from({ length: candidates.length }, (_, i) => i);
+        indices = [];
+        for (let i = 0; i < missing; i++) {
+          const next = i + Math.floor(rng() * (pool.length - i));
+          [pool[i], pool[next]] = [pool[next], pool[i]];
+          indices.push(pool[i]);
+        }
+        key = indices.slice().sort((a, b) => a - b).join(',');
+      } while (seen.has(key));
+      seen.add(key);
+      const board = [...knownBoard, ...indices.map(i => candidates[i])];
+      const ranks = holes.map(hole => bestOfSeven([...hole, ...board]));
+      let winners = [0];
+      for (let i = 1; i < ranks.length; i++) {
+        const comparison = compareHands(ranks[i], ranks[winners[0]]);
+        if (comparison > 0) winners = [i];
+        else if (comparison === 0) winners.push(i);
+      }
+      for (const winner of winners) shares[winner] += 1 / winners.length;
+      processed++;
     }
     return snapshot();
   }

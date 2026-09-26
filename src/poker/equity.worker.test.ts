@@ -16,6 +16,7 @@ const river: EquityJob = {
 const turn: EquityJob = {
   ...river, phase: 'turn', board: cards(['2C', '3D', '4H', '8S']), key: 'turn-1',
 };
+const preflop: EquityJob = { ...river, phase: 'preflop', board: [], key: 'preflop-1' };
 
 function harness(batchSize = 10) {
   const callbacks: Array<() => void> = [];
@@ -44,6 +45,48 @@ describe('cancellable equity queue', () => {
     queue.receive({ type: 'cancel', key: 'turn-1' });
     drain();
     expect(sent).toEqual([{ type: 'progress', key: 'turn-1', processed: 10, total: 44 }]);
+  });
+
+  it('finishes a newly queued river before unfinished preflop and resumes the preflop cursor', () => {
+    const { callbacks, sent, queue } = harness(1);
+    queue.receive({ type: 'start', job: preflop });
+    callbacks.shift()!();
+    expect(sent.at(-1)).toMatchObject({ type: 'progress', key: 'preflop-1', processed: 1, total: 1712304 });
+    queue.receive({ type: 'start', job: river });
+    callbacks.shift()!();
+    expect(sent.at(-1)).toEqual({ type: 'result', key: 'river-1', processed: 1, total: 1, shares: [1, 0] });
+    callbacks.shift()!();
+    expect(sent.at(-1)).toMatchObject({ type: 'progress', key: 'preflop-1', processed: 2 });
+    queue.receive({ type: 'cancel', key: 'preflop-1' });
+    while (callbacks.length) callbacks.shift()!();
+    expect(sent.some(message => message.type === 'result' && message.key === 'preflop-1')).toBe(false);
+  });
+
+  it('gives a waiting preflop more batches before an unfinished higher-priority turn completes', () => {
+    const { callbacks, sent, queue } = harness(1);
+    queue.receive({ type: 'start', job: preflop });
+    callbacks.shift()!();
+    queue.receive({ type: 'start', job: turn });
+    for (let i = 0; i < 8; i++) callbacks.shift()!();
+    expect(sent.some(message => message.key === 'turn-1' && message.type === 'progress')).toBe(true);
+    expect(sent.some(message => message.key === 'preflop-1' && message.type === 'progress' && message.processed > 1)).toBe(true);
+    expect(sent.some(message => message.type === 'result' && message.key === 'turn-1')).toBe(false);
+    queue.receive({ type: 'cancelAll' });
+    while (callbacks.length) callbacks.shift()!();
+  });
+
+  it('orders pending river before turn before flop, while keeping preflop alive', () => {
+    const { callbacks, sent, queue } = harness(1);
+    queue.receive({ type: 'start', job: preflop });
+    queue.receive({ type: 'start', job: { ...turn, phase: 'flop', board: turn.board.slice(0, 3), key: 'flop-1' } });
+    queue.receive({ type: 'start', job: turn });
+    queue.receive({ type: 'start', job: river });
+    callbacks.shift()!();
+    callbacks.shift()!();
+    callbacks.shift()!();
+    expect(sent.map(message => message.key).slice(0, 3)).toEqual(['preflop-1', 'river-1', 'turn-1']);
+    queue.receive({ type: 'cancelAll' });
+    while (callbacks.length) callbacks.shift()!();
   });
 
   it('cancels queued and running jobs without suppressing later jobs', () => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Card } from '../shared/cards';
-import type { EquityPlayer } from './engine/equity';
+import { runoutCount, type EquityPlayer } from './engine/equity';
 import type { Tournament } from './engine/tournament';
 import { equityKey, type EquityJob, type EquityPhase, type EquityResponse } from './equity.protocol';
 
@@ -11,7 +11,8 @@ const createDefaultWorker = () => new Worker(new URL('./equity.worker.ts', impor
 type Point = { key: string; processed: number; total: number; shares: number[] | null; error: string | null };
 type Points = Record<EquityPhase, Point | null>;
 const empty = (): Points => ({ preflop: null, flop: null, turn: null, river: null });
-const initial = (key: string): Point => ({ key, processed: 0, total: 0, shares: null, error: null });
+const initial = (job: EquityJob): Point => ({ key: job.key, processed: 0,
+  total: runoutCount(52 - 2 * job.players.length - job.board.length, 5 - job.board.length), shares: null, error: null });
 
 function desiredJobs(state: Tournament | null): EquityJob[] {
   if (!state?.hand || state.phase === 'finished' || state.result?.kind === 'uncontested') return [];
@@ -46,7 +47,7 @@ export function useEquity(state: Tournament | null, createWorker: () => Worker =
     const next = empty();
     for (const job of jobsRef.current) {
       next[job.phase] = completed.current.get(job.key) ?? {
-        ...initial(job.key), error: failures.current.get(job.key) ?? workerError.current,
+        ...initial(job), error: failures.current.get(job.key) ?? workerError.current,
       };
     }
     setPoints(old => {
@@ -91,9 +92,9 @@ export function useEquity(state: Tournament | null, createWorker: () => Worker =
         const message = event.data;
         if (!pending.current.has(message.key) || !jobsRef.current.some(job => job.key === message.key)) return;
         if (message.type === 'progress') {
+          const job = jobsRef.current.find(job => job.key === message.key)!;
           setPoints(old => {
-            const phase = jobsRef.current.find(job => job.key === message.key)!.phase;
-            return { ...old, [phase]: { ...initial(message.key), processed: message.processed, total: message.total } };
+            return { ...old, [job.phase]: { ...initial(job), processed: message.processed, total: message.total } };
           });
         } else {
           pending.current.delete(message.key);
@@ -125,6 +126,6 @@ export function useEquity(state: Tournament | null, createWorker: () => Worker =
 
   // Exclude previous hand/participants immediately, before effects run.
   const visible = empty();
-  for (const job of jobs) visible[job.phase] = points[job.phase]?.key === job.key ? points[job.phase] : initial(job.key);
+  for (const job of jobs) visible[job.phase] = points[job.phase]?.key === job.key ? points[job.phase] : initial(job);
   return visible;
 }

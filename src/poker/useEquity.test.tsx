@@ -97,6 +97,10 @@ it('mounts directly at a saved showdown and schedules all four exact phases', ()
   expect(starts(worker).map(job => job.phase)).toEqual(['preflop', 'flop', 'turn', 'river']);
   expect(starts(worker).every(job => job.players.length === state.result!.hands.length)).toBe(true);
   expect(result.current.river?.key).toBe(starts(worker)[3].key);
+  expect(result.current.preflop).toMatchObject({ processed: 0, total: 1712304, shares: null });
+  expect(result.current.flop).toMatchObject({ processed: 0, total: 990, shares: null });
+  expect(result.current.turn).toMatchObject({ processed: 0, total: 44, shares: null });
+  expect(result.current.river).toMatchObject({ processed: 0, total: 1, shares: null });
 });
 
 it('reuses completed matching points at showdown but recomputes missing points', () => {

@@ -68,13 +68,13 @@ function Results({ state, equity }: { state: Tournament; equity: ReturnType<type
         <p>Best five: {entry.best.bestFive.map(cardLabel).join(', ')}</p>
       </section>;
     })}
-    {state.phase === 'result' && result.kind === 'showdown' && result.hands.length >= 2 && <EquityChart players={result.hands.map(entry => ({ seat: entry.seat, name: name(entry.seat) }))} points={equity} />}
     <h3>Pot awards</h3>
     <ul>{result.pots.map((pot, index) => <li key={index}>
       {index === 0 ? 'Main pot' : `Side pot ${index}`} · {pot.amount} · {pot.winners.map(name).join(', ')}
       {pot.winners.length > 1 && ' (tie)'}
     </li>)}</ul>
     <ul>{[...payouts].map(([seat, amount]) => <li key={seat}>Payout: {name(seat)} +{amount}</li>)}</ul>
+    {state.phase === 'result' && result.kind === 'showdown' && result.hands.length >= 2 && <EquityChart players={result.hands.map(entry => ({ seat: entry.seat, name: name(entry.seat) }))} points={equity} />}
   </section>;
 }
 

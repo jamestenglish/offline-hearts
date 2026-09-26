@@ -77,6 +77,11 @@ describe('PokerApp', () => {
     }
     expect(screen.getByText(/Main pot/)).toHaveTextContent(String(state.result!.pots[0].amount));
     expect(screen.getByRole('table', { name: /equity/i })).toBeInTheDocument();
+    expect(screen.getAllByText('Calculating… 0 / 1')).toHaveLength(2);
+    const results = screen.getByRole('region', { name: 'Hand result' });
+    const awards = within(results).getByRole('heading', { name: 'Pot awards' });
+    const graph = within(results).getByRole('region', { name: 'Showdown equity' });
+    expect(awards.compareDocumentPosition(graph) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(workers.at(-1)!.requests.filter(request => request.type === 'start')).toHaveLength(4);
     const next = screen.getByRole('button', { name: 'Next hand' });
     expect(next).toBeEnabled();

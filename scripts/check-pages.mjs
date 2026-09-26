@@ -38,6 +38,17 @@ export function checkPages(distDir) {
       assert.ok(precache.includes(url.slice(base.length)), `SW does not precache ${url}`);
     }
   }
+  const pokerEntry = urls(poker).find(url => /\/assets\/poker-[\w-]+\.js$/.test(url));
+  assert.ok(pokerEntry, 'Poker entry script is missing');
+  const pokerCode = readFileSync(join(distDir, pokerEntry.slice(base.length)), 'utf8');
+  const workerUrls = [...pokerCode.matchAll(/new Worker\s*\(\s*new URL\s*\(\s*(['"`])([^'"`]+)\1/g)].map(match => match[2]);
+  assert.ok(workerUrls.length > 0, 'Poker entry does not reference a bundled Worker');
+  for (const url of workerUrls) {
+    assert.match(url, /^\/offline-hearts\/assets\/equity\.worker-[\w-]+\.js$/, `Invalid Worker URL: ${url}`);
+    const path = url.slice(base.length);
+    assert.ok(existsSync(join(distDir, path)), `Missing Worker asset: ${url}`);
+    assert.ok(precache.includes(path), `SW does not precache Worker: ${url}`);
+  }
   // With navigateFallback disabled, Workbox's precache route must accept clean nested navigation.
   assert.match(worker, /e\.precacheAndRoute\(/);
   assert.doesNotMatch(worker, /NavigationRoute/);

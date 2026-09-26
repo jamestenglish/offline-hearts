@@ -2,6 +2,7 @@ import { createEquity, type EquityCursor } from './engine/equity';
 import type { EquityJob, EquityRequest, EquityResponse } from './equity.protocol';
 
 const BOARD_LENGTH = { preflop: 0, flop: 3, turn: 4, river: 5 } as const;
+const MAX_JOBS = 4;
 
 export function createEquityQueue(
   send: (message: EquityResponse) => void,
@@ -55,6 +56,11 @@ export function createEquityQueue(
     receive(message) {
       if (disposed) return;
       if (message.type === 'start') {
+        for (let index = pending.length - 1; index >= 0; index--) {
+          if (pending[index].key === message.job.key) pending.splice(index, 1);
+        }
+        // Preserve the running cursor; retain only the most recently requested pending streets.
+        if (pending.length >= MAX_JOBS - (active ? 1 : 0)) pending.shift();
         pending.push(message.job);
         next();
       } else if (message.type === 'cancel') {

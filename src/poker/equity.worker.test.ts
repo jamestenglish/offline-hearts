@@ -64,6 +64,41 @@ describe('cancellable equity queue', () => {
     expect(sent.map(message => message.key)).toEqual(['river-1', 'second']);
   });
 
+  it('keeps the running job and only the three newest pending jobs when starts exceed four', () => {
+    const { sent, queue, drain } = harness();
+    for (let index = 0; index < 7; index++) {
+      queue.receive({ type: 'start', job: { ...river, key: `job-${index}` } });
+    }
+    drain();
+    expect(sent.map(message => message.key)).toEqual(['job-0', 'job-4', 'job-5', 'job-6']);
+  });
+
+  it('coalesces repeated pending keys so only their newest job runs', () => {
+    const { sent, queue, drain } = harness();
+    queue.receive({ type: 'start', job: { ...river, key: 'active' } });
+    queue.receive({ type: 'start', job: { ...river, key: 'repeat', board: cards(['AS', '3D', '4H', '8S', 'KC']) } });
+    queue.receive({ type: 'start', job: { ...river, key: 'other' } });
+    queue.receive({ type: 'start', job: { ...river, key: 'repeat' } });
+    drain();
+    expect(sent.map(message => [message.type, message.key])).toEqual([
+      ['result', 'active'], ['result', 'other'], ['result', 'repeat'],
+    ]);
+  });
+
+  it('does not send a stale result for a canceled job while the queue is at capacity', () => {
+    const { callbacks, sent, queue, drain } = harness();
+    queue.receive({ type: 'start', job: { ...turn, key: 'active' } });
+    for (let index = 1; index <= 5; index++) {
+      queue.receive({ type: 'start', job: { ...river, key: `job-${index}` } });
+    }
+    callbacks.shift()!();
+    expect(sent.at(-1)).toMatchObject({ type: 'progress', key: 'active', processed: 10 });
+    queue.receive({ type: 'cancel', key: 'active' });
+    drain();
+    expect(sent.map(message => message.key)).toEqual(['active', 'job-3', 'job-4', 'job-5']);
+    expect(sent.some(message => message.type === 'result' && message.key === 'active')).toBe(false);
+  });
+
   it('cancels a queued job without interrupting the running one', () => {
     const { sent, queue, drain } = harness();
     queue.receive({ type: 'start', job: river });

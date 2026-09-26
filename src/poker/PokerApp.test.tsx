@@ -1,10 +1,11 @@
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { act, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { cardLabel } from '../shared/cards';
+import { cardId, cardLabel } from '../shared/cards';
 import { ROSTER_KEY, saveVersioned } from '../shared/storage';
 import { legalActions } from './engine/betting';
 import { tournamentReducer, type Tournament } from './engine/tournament';
+import type { EquityRequest, EquityResponse } from './equity.protocol';
 import { loadPoker, POKER_KEY, SETTINGS_KEY } from './state';
 import { PokerApp } from './PokerApp';
 
@@ -27,9 +28,143 @@ function showdown(seed = 19, stack = 100): Tournament {
   return state;
 }
 
-beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); saveVersioned(POKER_KEY, start()); localStorage.removeItem(POKER_KEY); });
+function manyPlayerShowdown(count: number, seed = 19): Tournament {
+  let state = start(count, 100, seed);
+  for (let i = 0; i < 100 && state.phase === 'hand'; i++) {
+    state = tournamentReducer(state, { type: 'REVEAL' })!;
+    const legal = legalActions(state.hand!.betting);
+    state = tournamentReducer(state, { type: 'ACT', action: { type: legal.check ? 'CHECK' : 'CALL' } })!;
+  }
+  expect(state.result?.kind).toBe('showdown');
+  return state;
+}
+
+const workers: FakeWorker[] = [];
+class FakeWorker {
+  requests: EquityRequest[] = [];
+  onmessage: ((event: MessageEvent<EquityResponse>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  constructor() { workers.push(this); }
+  postMessage(request: EquityRequest) { this.requests.push(request); }
+  terminate() {}
+  emit(response: EquityResponse) { this.onmessage?.({ data: response } as MessageEvent<EquityResponse>); }
+}
+
+beforeEach(() => {
+  localStorage.clear(); vi.restoreAllMocks(); workers.length = 0;
+  vi.stubGlobal('Worker', FakeWorker);
+  saveVersioned(POKER_KEY, start()); localStorage.removeItem(POKER_KEY);
+});
 
 describe('PokerApp', () => {
+  it('highlights exactly the evaluated five across each showdown hand and community, and preserves exact awards', async () => {
+    const state = showdown();
+    saveVersioned(POKER_KEY, state);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    for (const entry of state.result!.hands) {
+      const section = screen.getByRole('region', { name: `${state.players[entry.seat].name} showdown` });
+      const hole = within(section).getByRole('group', { name: 'Hole cards' });
+      const board = within(section).getByRole('group', { name: 'Community cards' });
+      expect(within(hole).getAllByRole('button')).toHaveLength(2);
+      expect(within(board).getAllByRole('button')).toHaveLength(5);
+      expect(section.querySelectorAll('.poker-best-card')).toHaveLength(5);
+      const best = new Set(entry.best.bestFive.map(cardId));
+      const highlighted = [...section.querySelectorAll('.poker-best-card button')].map(button => button.getAttribute('aria-label'));
+      expect(new Set(highlighted)).toEqual(new Set(entry.best.bestFive.map(cardLabel)));
+      expect(best.size).toBe(5);
+      expect(section).toHaveTextContent(`Best five: ${entry.best.bestFive.map(cardLabel).join(', ')}`);
+    }
+    expect(screen.getByText(/Main pot/)).toHaveTextContent(String(state.result!.pots[0].amount));
+    expect(screen.getByRole('table', { name: /equity/i })).toBeInTheDocument();
+    expect(workers.at(-1)!.requests.filter(request => request.type === 'start')).toHaveLength(4);
+    const next = screen.getByRole('button', { name: 'Next hand' });
+    expect(next).toBeEnabled();
+    await userEvent.setup().click(next);
+    expect(screen.queryByRole('table', { name: /equity/i })).not.toBeInTheDocument();
+  });
+
+  it.each([0, 1])('highlights %i hole cards when the evaluator selects board-heavy best five', async holeCount => {
+    let state: Tournament | undefined;
+    let seat = -1;
+    for (let seed = 1; seed <= 400 && !state; seed++) {
+      const candidate = showdown(seed);
+      const entry = candidate.result!.hands.find(hand => hand.hole.filter(card => hand.best.bestFive.some(best => cardId(best) === cardId(card))).length === holeCount);
+      if (entry) { state = candidate; seat = entry.seat; }
+    }
+    expect(state).toBeDefined();
+    saveVersioned(POKER_KEY, state!);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const section = screen.getByRole('region', { name: `${state!.players[seat].name} showdown` });
+    expect(within(section).getByRole('group', { name: 'Hole cards' }).querySelectorAll('.poker-best-card')).toHaveLength(holeCount);
+    expect(within(section).getByRole('group', { name: 'Community cards' }).querySelectorAll('.poker-best-card')).toHaveLength(5 - holeCount);
+  });
+
+  it.each([2, 3, 8])('shows blind badges for participating seats at %i-player table even after payout', async count => {
+    const state = manyPlayerShowdown(count);
+    saveVersioned(POKER_KEY, state);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const seats = screen.getByRole('list', { name: 'Seats' });
+    const live = state.hand!.hole.flatMap((hole, seat) => hole ? [seat] : []);
+    const small = count === 2 ? state.dealer : live[(live.indexOf(state.dealer) + 1) % live.length];
+    const big = live[(live.indexOf(small) + 1) % live.length];
+    expect(within(seats.children[small] as HTMLElement).getByText('SB')).toBeInTheDocument();
+    expect(within(seats.children[big] as HTMLElement).getByText('BB')).toBeInTheDocument();
+    expect(seats.querySelectorAll('.poker-badge')).toHaveLength(2);
+  });
+
+  it('does not assign blind badges to seats absent from this hand, regardless of payout stacks', async () => {
+    let state: Tournament | undefined;
+    for (let seed = 1; seed <= 100 && !state; seed++) {
+      let candidate = start(3, 10, seed);
+      candidate = tournamentReducer(candidate, { type: 'REVEAL' })!;
+      candidate = tournamentReducer(candidate, { type: 'ACT', action: { type: 'FOLD' } })!;
+      if (candidate.phase === 'hand') {
+        candidate = tournamentReducer(candidate, { type: 'REVEAL' })!;
+        candidate = tournamentReducer(candidate, { type: 'ACT', action: { type: legalActions(candidate.hand!.betting).check ? 'CHECK' : 'CALL' } })!;
+      }
+      if (candidate.phase === 'result' && candidate.stacks.filter(stack => stack > 0).length === 2)
+        state = tournamentReducer(candidate, { type: 'NEXT_HAND', seed: 19, bigBlind: 10 })!;
+    }
+    expect(state).toBeDefined();
+    const absent = state!.hand!.hole.findIndex(hole => hole === null);
+    expect(absent).toBeGreaterThanOrEqual(0);
+    saveVersioned(POKER_KEY, state!);
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const seat = screen.getByRole('list', { name: 'Seats' }).children[absent] as HTMLElement;
+    expect(within(seat).queryByText(/^(SB|BB)$/)).not.toBeInTheDocument();
+  });
+
+  it('shows worker progress at showdown without blocking the next hand', async () => {
+    saveVersioned(POKER_KEY, showdown());
+    render(<PokerApp />);
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
+    const worker = workers.at(-1)!;
+    const request = worker.requests.find((entry): entry is Extract<EquityRequest, { type: 'start' }> => entry.type === 'start')!;
+    act(() => worker.emit({ type: 'progress', key: request.job.key, processed: 10, total: 44 }));
+    expect(screen.getAllByText('Calculating… 10 / 44')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Next hand' })).toBeEnabled();
+  });
+
+  it('uses current-round copy in public seats, betting panel, and confirmation without street-bet wording', async () => {
+    saveVersioned(POKER_KEY, start());
+    render(<PokerApp />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Resume$/i }));
+    expect(screen.getByRole('list', { name: 'Seats' })).toHaveTextContent('Current round bet:');
+    expect(document.querySelector('.poker-best-card')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Reveal/i }));
+    expect(screen.getByRole('region', { name: 'Betting actions' })).toHaveTextContent('Current round bet:');
+    const input = screen.getByRole('spinbutton', { name: 'Bet to current round total' });
+    expect(input).toBeInTheDocument();
+    await user.type(input, String(legalActions(start().hand!.betting).minTotal));
+    await user.click(screen.getByRole('button', { name: /Bet to/i }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('current round total');
+    expect(screen.queryByText(/Street:|street bet|street total/i)).not.toBeInTheDocument();
+  });
   it('validates seats and starts an eight-player table with visible chips and an accessible scroll list', async () => {
     roster();
     const user = userEvent.setup();
@@ -110,7 +245,7 @@ describe('PokerApp', () => {
     expect(within(screen.getByRole('list', { name: /Seats/i })).getAllByRole('listitem')).toHaveLength(2);
   });
 
-  it('hides hole card text before reveal, reveals only the acting hand, and confirms a street-total bet', async () => {
+  it('hides hole card text before reveal, reveals only the acting hand, and confirms a current-round bet', async () => {
     const state = start(3);
     save(state);
     const user = userEvent.setup();
@@ -123,7 +258,7 @@ describe('PokerApp', () => {
     for (const label of own) expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     for (const label of other) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
     const legal = legalActions(state.hand!.betting);
-    await user.type(screen.getByRole('spinbutton', { name: /street total/i }), String(legal.minTotal));
+    await user.type(screen.getByRole('spinbutton', { name: /current round total/i }), String(legal.minTotal));
     await user.click(screen.getByRole('button', { name: /Bet to/i }));
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent(String(legal.minTotal));
@@ -152,9 +287,8 @@ describe('PokerApp', () => {
     for (const entry of state.result!.hands) {
       const section = screen.getByRole('region', { name: `${state.players[entry.seat].name} showdown` });
       for (const card of entry.hole) expect(within(section).getAllByRole('button', { name: cardLabel(card) }).length).toBeGreaterThan(0);
-      const best = within(section).getByRole('group', { name: /Best five/i });
-      expect(within(best).getAllByRole('button')).toHaveLength(5);
-      for (const card of entry.best.bestFive) expect(within(best).getByRole('button', { name: cardLabel(card) })).toBeInTheDocument();
+      expect(section.querySelectorAll('.poker-best-card')).toHaveLength(5);
+      for (const card of entry.best.bestFive) expect(section).toHaveTextContent(cardLabel(card));
       expect(section).toHaveTextContent(entry.best.label);
     }
     const winners = state.result!.pots[0].winners.map(i => state.players[i].name).join(', ');
@@ -204,6 +338,11 @@ describe('PokerApp', () => {
     render(<PokerApp />);
     await userEvent.setup().click(screen.getByRole('button', { name: /^Resume$/i }));
     expect(screen.getByText(/wins uncontested/i)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Best five' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Community cards' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: /equity/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /equity/i })).not.toBeInTheDocument();
+    expect(document.querySelector('.poker-best-card')).not.toBeInTheDocument();
     for (const label of secret) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
   });
 

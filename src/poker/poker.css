@@ -11,8 +11,24 @@
 .poker-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0; list-style: none; text-align: left; }
 .poker-seats li { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; background: rgba(0,0,0,.25); padding: 12px; border-radius: 12px; }
 .poker-seats .poker-current { outline: 2px solid var(--accent); }
+.poker-badge { align-self: flex-start; border: 1px solid currentColor; border-radius: 8px; padding: 2px 8px; font-weight: 700; }
 .poker-cards { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px; }
+.poker-best-card { display: inline-flex; border: 3px solid #ffd43b; border-radius: 9px; }
 .poker-showdown-hand { padding: 12px 0; border-top: 1px solid rgba(255,255,255,.3); }
+.poker-equity { width: 100%; max-width: 100%; }
+.poker-equity svg { width: 100%; max-width: 100%; height: auto; background: rgba(0,0,0,.2); border-radius: 8px; }
+.poker-equity svg text { font-size: 9px; fill: #fff; }
+.poker-equity-grid { stroke: rgba(255,255,255,.35); stroke-dasharray: 2 3; }
+.poker-equity-series-1 { stroke-dasharray: 5 3; }
+.poker-equity-series-2 { stroke-dasharray: 2 3; }
+.poker-equity-series-3 { stroke-dasharray: 8 2 2 2; }
+.poker-equity-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.poker-equity-legend-1 { text-decoration: underline dashed; }
+.poker-equity-legend-2 { text-decoration: underline dotted; }
+.poker-equity-legend-3 { text-decoration: underline double; }
+.poker-equity-scroll { width: 100%; max-width: 100%; overflow-x: auto; }
+.poker-equity table { border-collapse: collapse; width: 100%; text-align: left; }
+.poker-equity th, .poker-equity td { border-bottom: 1px solid rgba(255,255,255,.3); padding: 6px; }
 .poker-results ul { line-height: 1.8; }
 .poker-app input { font-size: 16px; }
 @media (max-width: 600px) { .poker-seats { grid-template-columns: minmax(0, 1fr); } }

@@ -3,22 +3,28 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { PrivacyScreen } from '../components/PrivacyScreen';
 import { PlayersScreen } from '../screens/PlayersScreen';
 import { CardView } from '../shared/CardView';
+import { cardId, cardLabel } from '../shared/cards';
 import { activePlayers } from '../shared/roster';
 import { useRoster } from '../shared/useRoster';
 import { getSaveFailures, subscribeToSaveFailures } from '../shared/storage';
 import { newId, randomSeed } from '../random';
 import { legalActions, type BetAction } from './engine/betting';
+import { positions } from './engine/seats';
 import type { Tournament } from './engine/tournament';
+import { EquityChart } from './EquityChart';
 import { usePoker } from './state';
 import { useEquity } from './useEquity';
 import './poker.css';
 
-function Cards({ cards }: { cards: NonNullable<Tournament['hand']>['board'] }) {
-  return <div className="poker-cards">{cards.map(card => <CardView key={`${card.rank}-${card.suit}`} card={card} />)}</div>;
+const createWorker = () => new Worker(new URL('./equity.worker.ts', import.meta.url), { type: 'module' });
+
+function Cards({ cards, highlighted }: { cards: NonNullable<Tournament['hand']>['board']; highlighted?: ReadonlySet<string> }) {
+  return <div className="poker-cards">{cards.map(card => <span key={cardId(card)} className={highlighted?.has(cardId(card)) ? 'poker-best-card' : undefined}><CardView card={card} /></span>)}</div>;
 }
 
 function Table({ state }: { state: Tournament }) {
   const hand = state.hand;
+  const blinds = hand ? positions(hand.hole.map(hole => ({ stack: hole ? 1 : 0 })), state.dealer) : null;
   return <section className="poker-table" aria-label="Public table">
     <p>Hand {state.handNumber} · {state.street ?? 'Finished'}</p>
     {hand && <>
@@ -29,8 +35,10 @@ function Table({ state }: { state: Tournament }) {
     <ul className="poker-seats" aria-label="Seats">
       {state.players.map((player, index) => <li key={player.id} className={state.current === index ? 'poker-current' : ''}>
         <strong>{player.name}{state.dealer === index ? ' · Dealer' : ''}</strong>
+        {blinds?.small === index && <span className="poker-badge" title="Small blind">SB</span>}
+        {blinds?.big === index && <span className="poker-badge" title="Big blind">BB</span>}
         <span>Stack: {state.stacks[index]}</span>
-        {hand && <span>Contributed: {hand.betting.seats[index].committed} · Street: {hand.betting.seats[index].streetBet}</span>}
+        {hand && <span>Contributed: {hand.betting.seats[index].committed} · Current round bet: {hand.betting.seats[index].streetBet}</span>}
         {hand?.betting.seats[index].folded && <span>Folded</span>}
         {hand?.betting.seats[index].allIn && !hand.betting.seats[index].folded && <span>All in</span>}
       </li>)}
@@ -38,7 +46,7 @@ function Table({ state }: { state: Tournament }) {
   </section>;
 }
 
-function Results({ state }: { state: Tournament }) {
+function Results({ state, equity }: { state: Tournament; equity: ReturnType<typeof useEquity> }) {
   const result = state.result!;
   const name = (seat: number) => state.players[seat].name;
   const payouts = new Map<number, number>();
@@ -51,11 +59,16 @@ function Results({ state }: { state: Tournament }) {
   }
   return <section className="poker-results" aria-label="Hand result">
     <h2>{result.kind === 'uncontested' ? `${name(result.winnerSeats[0])} wins uncontested` : 'Showdown'}</h2>
-    {result.kind === 'showdown' && result.hands.map(entry => <section key={entry.seat} aria-label={`${name(entry.seat)} showdown`} className="poker-showdown-hand">
-      <h3>{name(entry.seat)} · {entry.best.label}</h3>
-      <p>Hole cards</p><Cards cards={entry.hole} />
-      <div role="group" aria-label="Best five"><span>Best five</span><Cards cards={entry.best.bestFive} /></div>
-    </section>)}
+    {result.kind === 'showdown' && result.hands.map(entry => {
+      const highlighted = new Set(entry.best.bestFive.map(cardId));
+      return <section key={entry.seat} aria-label={`${name(entry.seat)} showdown`} className="poker-showdown-hand">
+        <h3>{name(entry.seat)} · {entry.best.label}</h3>
+        <div role="group" aria-label="Hole cards"><p>Hole cards</p><Cards cards={entry.hole} highlighted={highlighted} /></div>
+        {state.hand && <div role="group" aria-label="Community cards"><p>Community cards</p><Cards cards={state.hand.board} highlighted={highlighted} /></div>}
+        <p>Best five: {entry.best.bestFive.map(cardLabel).join(', ')}</p>
+      </section>;
+    })}
+    {state.phase === 'result' && result.kind === 'showdown' && result.hands.length >= 2 && <EquityChart players={result.hands.map(entry => ({ seat: entry.seat, name: name(entry.seat) }))} points={equity} />}
     <h3>Pot awards</h3>
     <ul>{result.pots.map((pot, index) => <li key={index}>
       {index === 0 ? 'Main pot' : `Side pot ${index}`} · {pot.amount} · {pot.winners.map(name).join(', ')}
@@ -71,23 +84,23 @@ function ActionPanel({ state, onAct }: { state: Tournament; onAct: (action: BetA
   const legal = legalActions(state.hand!.betting);
   const total = Number(draft);
   const validTotal = draft.trim() !== '' && Number.isSafeInteger(total) && legal.minTotal !== null && total >= legal.minTotal && total <= legal.maxTotal;
-  const actionName = (action: BetAction) => action.type === 'BET_TO' ? `Bet to ${action.total} street total` :
+  const actionName = (action: BetAction) => action.type === 'BET_TO' ? `Bet to ${action.total} current round total` :
     action.type === 'ALL_IN' ? `All in for ${legal.maxTotal}` : action.type === 'CALL' ? `Call ${legal.call}` :
     action.type === 'CHECK' ? 'Check' : 'Fold';
   return <section className="poker-actions" aria-label="Betting actions">
     <h2>{state.players[state.current!].name}'s turn</h2>
     <div role="group" aria-label="Your hole cards"><Cards cards={state.hand!.hole[state.current!]!} /></div>
-    <p>To call: {legal.call ?? 0} · Current street bet: {state.hand!.betting.currentBet}</p>
+    <p>To call: {legal.call ?? 0} · Current round bet: {state.hand!.betting.currentBet}</p>
     <div className="row">
       <button className="btn" disabled={!legal.check} onClick={() => setPending({ type: 'CHECK' })}>Check</button>
       <button className="btn" disabled={legal.call === null} onClick={() => setPending({ type: 'CALL' })}>Call {legal.call ?? ''}</button>
       <button className="btn secondary" disabled={!legal.fold} onClick={() => setPending({ type: 'FOLD' })}>Fold</button>
       <button className="btn" disabled={!legal.allIn} onClick={() => setPending({ type: 'ALL_IN' })}>All in</button>
     </div>
-    <label className="field">Bet to street total
-      <input type="number" inputMode="numeric" min={legal.minTotal ?? undefined} max={legal.maxTotal} step="1" value={draft} onChange={e => setDraft(e.target.value)} aria-label="Bet to street total" disabled={legal.minTotal === null} />
+    <label className="field">Bet to current round total
+      <input type="number" inputMode="numeric" min={legal.minTotal ?? undefined} max={legal.maxTotal} step="1" value={draft} onChange={e => setDraft(e.target.value)} aria-label="Bet to current round total" disabled={legal.minTotal === null} />
     </label>
-    <p>Minimum street total: {legal.minTotal ?? 'Unavailable'} · Maximum: {legal.maxTotal}</p>
+    <p>Minimum current round total: {legal.minTotal ?? 'Unavailable'} · Maximum: {legal.maxTotal}</p>
     <button className="btn" disabled={!validTotal} onClick={() => setPending({ type: 'BET_TO', total })}>Bet to {draft || '…'}</button>
     {pending && <ConfirmDialog message={`Confirm ${actionName(pending)} for ${state.players[state.current!].name}?`} confirmLabel={`Confirm ${actionName(pending)}`} onCancel={() => setPending(null)} onConfirm={() => { onAct(pending); setPending(null); setDraft(''); }} />}
   </section>;
@@ -107,7 +120,7 @@ function BlindEditor({ value, onSave }: { value: number; onSave: (value: number)
 
 export function PokerApp() {
   const { state, dispatch, resumable, bigBlind: settings, setBigBlind } = usePoker();
-  useEquity(state);
+  const equity = useEquity(state, createWorker);
   const roster = useRoster();
   const failed = useSyncExternalStore(subscribeToSaveFailures, getSaveFailures);
   const [editingBlinds, setEditingBlinds] = useState(false);
@@ -160,7 +173,7 @@ export function PokerApp() {
       {state.phase === 'hand' && state.current !== null && (state.holeRevealed ?
         <ActionPanel key={`${state.handNumber}-${state.street}-${state.current}`} state={state} onAct={action => dispatch({ type: 'ACT', action })} /> :
         <PrivacyScreen message={`Pass to ${state.players[state.current].name}. Hole cards are hidden.`} buttonLabel={`Reveal ${state.players[state.current].name}'s cards`} onReveal={() => dispatch({ type: 'REVEAL' })} />)}
-      {state.result && <Results state={state} />}
+      {state.result && <Results state={state} equity={equity} />}
       {state.phase === 'result' && <button className="btn" onClick={() => dispatch({ type: 'NEXT_HAND', bigBlind: settings, seed: randomSeed() })}>{state.stacks.filter(value => value > 0).length === 1 ? 'Finish tournament' : 'Next hand'}</button>}
       {state.phase === 'finished' && <h2>Champion: {state.players[state.stacks.findIndex(value => value > 0)].name}</h2>}
     </>;

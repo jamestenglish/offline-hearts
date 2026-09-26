@@ -10,6 +10,7 @@ import { newId, randomSeed } from '../random';
 import { legalActions, type BetAction } from './engine/betting';
 import type { Tournament } from './engine/tournament';
 import { usePoker } from './state';
+import { useEquity } from './useEquity';
 import './poker.css';
 
 function Cards({ cards }: { cards: NonNullable<Tournament['hand']>['board'] }) {
@@ -106,6 +107,7 @@ function BlindEditor({ value, onSave }: { value: number; onSave: (value: number)
 
 export function PokerApp() {
   const { state, dispatch, resumable, bigBlind: settings, setBigBlind } = usePoker();
+  useEquity(state);
   const roster = useRoster();
   const failed = useSyncExternalStore(subscribeToSaveFailures, getSaveFailures);
   const [editingBlinds, setEditingBlinds] = useState(false);

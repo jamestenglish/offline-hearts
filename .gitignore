@@ -1,3 +1,6 @@
+ignore/prompts
+node_modules
+dist
+dev-dist
+*.local
 ignore/
-dist/
-node_modules/

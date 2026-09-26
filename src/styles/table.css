@@ -1,0 +1,90 @@
+.table {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.06) 0%, transparent 70%);
+}
+
+.seat-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.seat-label .name {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 24vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seat-label.active .name {
+  background: var(--accent);
+  color: #222;
+}
+
+.seat-label .taken {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.seat-label.seat-0 { bottom: 1%; left: 50%; transform: translateX(-50%); }
+.seat-label.seat-1 { left: 0; top: 50%; transform: translateY(-50%); }
+.seat-label.seat-2 { top: 1%; left: 50%; transform: translateX(-50%); }
+.seat-label.seat-3 { right: 0; top: 50%; transform: translateY(-50%); }
+
+.played {
+  position: absolute;
+  animation: play-in 0.25s ease-out;
+}
+
+.played.seat-0 { bottom: 16%; left: 50%; transform: translateX(-50%); }
+.played.seat-1 { left: 24%; top: 50%; transform: translateY(-50%); }
+.played.seat-2 { top: 16%; left: 50%; transform: translateX(-50%); }
+.played.seat-3 { right: 24%; top: 50%; transform: translateY(-50%); }
+
+.played.winner .card {
+  box-shadow: 0 0 0 3px var(--accent), 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes play-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+.deal-area {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 1;
+  --reach: min(36vw, 150px);
+}
+
+.deal-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  animation: deal-fly 0.35s ease-out both;
+}
+
+@keyframes deal-fly {
+  from {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate(calc(var(--reach) * var(--x)), calc(var(--reach) * var(--y))) rotate(var(--rot));
+  }
+}

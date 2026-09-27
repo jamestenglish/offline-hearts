@@ -15,7 +15,8 @@ export function PlayScreen({ state, dispatch }: ScreenProps) {
   const player = state.players[state.current];
   return (
     <div className="screen">
-      <Table players={state.players} tricksWon={state.tricksWon} cards={state.trick.cards} active={state.current} />
+      <Table players={state.players} tricksWon={state.tricksWon} cards={state.trick.cards}
+        previousCards={state.lastTrick?.cards} active={state.current} />
       {state.handRevealed ? (
         <PlayHand
           key={`${state.current}-${state.trickNumber}-${state.trick.cards.length}`}

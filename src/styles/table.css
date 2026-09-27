@@ -28,6 +28,18 @@
   text-overflow: ellipsis;
 }
 
+.seat-label:has(.last-card-mini) { display: grid; align-items: center; justify-items: center; column-gap: 5px; row-gap: 2px; }
+.seat-label.last-card-beside:has(.last-card-mini) { grid-template-columns: auto auto; }
+.seat-label.last-card-beside .name { grid-column: 1; grid-row: 1; }
+.seat-label.last-card-beside .last-card-mini { grid-column: 2; grid-row: 1 / 3; }
+.seat-label.last-card-beside .taken { grid-column: 1; grid-row: 2; }
+.seat-label.last-card-below .name { grid-row: 1; }
+.seat-label.last-card-below .last-card-mini { grid-row: 2; }
+.seat-label.last-card-below .taken { grid-row: 3; }
+.last-card-mini { display: inline-flex; align-items: center; justify-content: center; min-width: 25px; height: 34px; padding: 2px; border: 1px solid #b9b9b9; border-radius: 4px; background: white; font-size: 0.75rem; font-weight: 800; line-height: 1; box-shadow: 0 1px 3px #0006; white-space: nowrap; }
+.last-card-mini-red { color: #c8102e; }
+.last-card-mini-black { color: #1a1a1a; }
+
 .seat-label.active .name {
   background: var(--accent);
   color: #222;

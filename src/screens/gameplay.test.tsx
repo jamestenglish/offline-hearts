@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cardId, cardLabel } from '../engine/cards';
 import { currentLegalPlays, gameReducer, type GameState, initialState } from '../engine/game';
@@ -108,6 +108,21 @@ describe('LeadScreen', () => {
 });
 
 describe('PlayScreen', () => {
+  it('shows the last completed trick in name badges during the next trick and replaces it after another', () => {
+    const first = advance(start(), s => s.phase === 'trickResult');
+    const next = gameReducer(first, { type: 'ACK_TRICK' });
+    const { rerender } = render(<PlayScreen state={next} dispatch={vi.fn()} />);
+    for (const { seat, card } of first.lastTrick!.cards) {
+      expect(within(screen.getByTestId(`seat-${seat}`)).getByText(cardLabel(card))).toBeInTheDocument();
+    }
+    const second = advance(next, s => s.phase === 'trickResult');
+    const thirdTrick = gameReducer(second, { type: 'ACK_TRICK' });
+    rerender(<PlayScreen state={thirdTrick} dispatch={vi.fn()} />);
+    for (const { seat, card } of second.lastTrick!.cards) {
+      expect(within(screen.getByTestId(`seat-${seat}`)).getByText(cardLabel(card))).toBeInTheDocument();
+    }
+    expect(screen.getByTestId('seat-0').querySelectorAll('.last-card-mini')).toHaveLength(1);
+  });
   it('keeps the selected card while toggling sort and explains received cards', () => {
     const dispatch = vi.fn();
     const playing = advance(start(), s => s.phase === 'playing' && s.handRevealed);
